@@ -1,0 +1,1 @@
+A service that caches all the tiles in specified "bounds" for provided layer(s) in .mbtiles files and exposes the tilesets for download. It uses mapproxy to generate the tileset and can be used for local server and remote servers. 

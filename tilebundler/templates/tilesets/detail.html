@@ -1,0 +1,13 @@
+<h1>{{ tileset.name }}</h1>
+
+{% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
+
+<form action="{% url 'tilesets:generate' tileset.id %}" method="post">
+{% csrf_token %}
+    <label for="name1"> name: </label>
+    <input name="name" id="name1" value="{{ tileset.name }}" /> <br/>
+    created_by: {{ tileset.created_by }} <br/>
+    created_at: {{ tileset.created_at }} <br/>
+
+    <input type="submit" value="Generate" />
+</form>

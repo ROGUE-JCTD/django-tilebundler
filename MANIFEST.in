@@ -1,0 +1,5 @@
+include README.md CHANGES LICENSE
+recursive-include tilebundler/static *.js
+recursive-include tilebundler/static *.css
+recursive-include tilebundler/static *.png
+recursive-include tilebundler/templates *.html

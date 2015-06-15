@@ -1,0 +1,13 @@
+{% load staticfiles %}
+
+<link rel="stylesheet" type="text/css" href="{% static 'tilesets/css/style.css' %}" />
+
+{% if tileset_list %}
+    <ul>
+    {% for tileset in tileset_list %}
+        <li><a href="{% url 'tilesets:detail' tileset.id %}">{{ tileset.name }}</a></li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>No tilesets are available.</p>
+{% endif %}
