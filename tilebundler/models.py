@@ -2,7 +2,6 @@ from django.db import models
 from django.conf import settings
 from .helpers import generate_confs
 from mapproxy.seed.seeder import seed
-from mapproxy.seed.cleanup import cleanup
 import json
 
 
@@ -44,6 +43,5 @@ class Tileset(models.Model):
 
     def generate_tileset(self):
         mapproxy_conf, seed_conf = generate_confs(self)
-        tasks = seed_conf.seeds(['osm_seed'])
+        tasks = seed_conf.seeds(['tileset_seed'])
         seed(tasks, dry_run=False)
-        #cleanup(cleanup_tasks, verbose=False, dry_run=False)

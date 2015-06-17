@@ -8,6 +8,7 @@ from django.views.static import serve
 import json
 
 from .models import Tileset
+import helpers
 import time
 
 
@@ -35,10 +36,10 @@ def json_view(request, tileset_id):
 #TODO: use as part of detail view
 def download_view(request, tileset_id):
     tileset = get_object_or_404(Tileset, pk=tileset_id)
-    file_path = '{}/{}.{}'.format('./cache_data', tileset.name, 'mbtiles')
-    file_path = os.path.abspath(file_path)
-    response = serve(request, os.path.basename(file_path), os.path.dirname(file_path))
-    response['Content-Disposition'] = 'attachment; filename="{}"'.format(os.path.basename(file_path))
+    filename = helpers.get_tileset_filename(tileset)
+    filename = os.path.abspath(filename)
+    response = serve(request, os.path.basename(filename), os.path.dirname(filename))
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(os.path.basename(filename))
     return response
 
 
