@@ -4,6 +4,8 @@ from mapproxy.seed.spec import validate_seed_conf
 from mapproxy.config.loader import ProxyConfiguration
 from mapproxy.config.spec import validate_mapproxy_conf
 from django.conf import settings
+from django.views.static import serve
+import os
 import base64
 import yaml
 
@@ -151,3 +153,9 @@ def u_to_str(string):
     return string.encode('ascii', 'ignore')
 
 
+def tileset_download(request, tileset):
+    filename = get_tileset_filename(tileset)
+    filename = os.path.abspath(filename)
+    response = serve(request, os.path.basename(filename), os.path.dirname(filename))
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(os.path.basename(filename))
+    return response

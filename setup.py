@@ -4,13 +4,13 @@ from setuptools import setup, find_packages
 here = os.path.abspath(os.path.dirname(__file__))
 
 setup(
-    name='tilebundler',
-    version='0.1-alpha2',
+    name='django-tilebundler',
+    version='0.1-alpha1',
     author='Syrus Mesdaghi',
     author_email='geoshape.org@gmail.com',
-    url='https://github.com/ROGUE-JCTD/tilebundler',
-    download_url="https://github.com/ROGUE-JCTD/tilebundler",
-    description="Service that creates tilesets from layer sources and serves them",
+    url='https://github.com/ROGUE-JCTD/django-tilebundler',
+    download_url='https://github.com/ROGUE-JCTD/django-tilebundler',
+    description='Service that creates tilesets from layer sources and serves them',
     long_description=open(os.path.join(here, 'README.md')).read(),
     license='MIT',
     packages=find_packages(),
@@ -27,7 +27,8 @@ setup(
         'Programming Language :: Python :: 2.7'
     ],
     install_requires=[
-        "MapProxy==1.8.0",
-        "PyYAML==3.10"
+        'MapProxy==1.8.0',
+        'PyYAML==3.10',
+        'django-tastypie==0.12.1'
     ]
 )
