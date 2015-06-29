@@ -18,7 +18,8 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
     {
       "services":{
         "wms":{
-          "on_source_errors":"raise"
+          "on_source_errors":"raise",
+          "image_formats": ["image/png"]
         }
       },
       "layers":[
@@ -60,7 +61,12 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
       },
       "grids":{
         "webmercator":{
-          "base":"GLOBAL_WEBMERCATOR"
+          "base":"GLOBAL_MERCATOR"
+        }
+      },
+      "globals": {
+        "image": {
+          "paletted": false
         }
       }
     }

@@ -43,4 +43,5 @@ class Tileset(models.Model):
         mapproxy_conf, seed_conf = generate_confs(self)
         tasks = seed_conf.seeds(['tileset_seed'])
         seed(tasks, dry_run=False)
+        return 'completed'
 
