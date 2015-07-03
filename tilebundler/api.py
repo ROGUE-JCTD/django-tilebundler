@@ -1,15 +1,27 @@
 from tastypie.resources import ModelResource
+from tastypie.authentication import BasicAuthentication
 from tastypie.utils import trailing_slash
 from django.conf.urls import url
 from .models import Tileset
+from tastypie import fields
+from django.contrib.auth import get_user_model
 import helpers
 
 
+class UserResource(ModelResource):
+    class Meta:
+        queryset = get_user_model().objects.all()
+        fields = ['username', 'first_name', 'last_name']
+        resource_name = 'created_by'
+
+
 class TilesetResource(ModelResource):
+    created_by = fields.ToOneField(UserResource, 'created_by',  full=True)
 
     class Meta:
         queryset = Tileset.objects.all()
         excludes = ['server_password']
+        authentication = BasicAuthentication()
 
     def determine_format(self, request):
         return 'application/json'
