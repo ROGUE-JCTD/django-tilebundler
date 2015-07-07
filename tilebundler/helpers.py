@@ -6,6 +6,8 @@ from mapproxy.config.spec import validate_mapproxy_conf
 from django.conf import settings
 from django.views.static import serve
 from datetime import datetime
+from mapproxy.seed import seeder
+from mapproxy.seed import util
 import os
 import base64
 import yaml
@@ -112,7 +114,7 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
     mapproxy_conf["sources"]["tileset_source"]["req"]["layers"] = u_to_str(tileset.layer_name)
     mapproxy_conf["layers"][0]["name"] = u_to_str(tileset.layer_name)
     mapproxy_conf["layers"][0]["title"] = u_to_str(tileset.layer_name)
-    mapproxy_conf["caches"]["tileset_cache"]["cache"]["filename"] = get_tileset_filename(tileset, True)
+    mapproxy_conf["caches"]["tileset_cache"]["cache"]["filename"] = get_tileset_filename(tileset, "generating")
 
     seed_conf["seeds"]["tileset_seed"]["levels"]["from"] = tileset.layer_zoom_start
     seed_conf["seeds"]["tileset_seed"]["levels"]["to"] = tileset.layer_zoom_stop
@@ -192,12 +194,8 @@ def get_tileset_dir():
     return conf.get('tileset_dir', './')
 
 
-# when downloading is True, returns the temp filename used when the mbtiles is being generated
-def get_tileset_filename(tileset, generateing=False):
-    postfix = ''
-    if generateing:
-        postfix = '_generateing'
-    return "{}/{}{}.{}".format(get_tileset_dir(), tileset.name, postfix, "mbtiles")
+def get_tileset_filename(tileset, extension="mbtiles"):
+    return "{}/{}.{}".format(get_tileset_dir(), tileset.name, extension)
 
 
 def update_tileset_stats(tileset):
@@ -218,3 +216,8 @@ def tileset_download(request, tileset):
     response = serve(request, os.path.basename(filename), os.path.dirname(filename))
     response['Content-Disposition'] = 'attachment; filename="{}"'.format(os.path.basename(filename))
     return response
+
+
+def is_int_str(v):
+    v = str(v).strip()
+    return v == '0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()

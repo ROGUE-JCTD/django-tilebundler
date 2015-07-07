@@ -35,6 +35,9 @@ class TilesetResource(ModelResource):
             url(r"^(?P<resource_name>%s)/(?P<pk>\w[\w/-]*)/download%s$" %
                 (self._meta.resource_name, trailing_slash()),
                 self.wrap_view('download'), name="api_tileset_download"),
+            url(r"^(?P<resource_name>%s)/(?P<pk>\w[\w/-]*)/progress%s$" %
+                (self._meta.resource_name, trailing_slash()),
+                self.wrap_view('progress'), name="api_tileset_progress"),
         ]
 
     def generate(self, request, **kwargs):
@@ -69,3 +72,19 @@ class TilesetResource(ModelResource):
             **self.remove_api_resource_names(kwargs))
 
         return helpers.tileset_download(request, tileset)
+
+    def progress(self, request, **kwargs):
+        """ proxy for the helpers.tileset_download method """
+
+        # method check to avoid bad requests
+        self.method_check(request, allowed=['get'])
+
+        # create a basic bundle object for self.get_cached_obj_get.
+        basic_bundle = self.build_bundle(request=request)
+
+        # using the primary key defined in the url, obtain the tileset
+        tileset = self.cached_obj_get(
+            bundle=basic_bundle,
+            **self.remove_api_resource_names(kwargs))
+
+        return self.create_response(request, tileset.get_progress())
