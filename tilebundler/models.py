@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from mapproxy.seed import seeder
 from mapproxy.seed import util
+from threading import Thread
 import helpers
 import os
 import time
@@ -31,9 +32,6 @@ class Tileset(models.Model):
 
     filesize = models.BigIntegerField(editable=False, default=0)
 
-    # internal members
-    progress_logger = None
-
     def __unicode__(self):
         return self.name
 
@@ -48,25 +46,33 @@ class Tileset(models.Model):
         return json.dumps(self.to_minimal_dict())
 
     def generate(self):
-        mapproxy_conf, seed_conf = helpers.generate_confs(self)
+        res = ""
+        with helpers.thread_map_lock:
+            thread = helpers.thread_map.get(self.id, None)
+            if not thread:
+                mapproxy_conf, seed_conf = helpers.generate_confs(self)
+                # if there is an old _generating one around, back it up
+                if os.path.isfile(helpers.get_tileset_filename(self, "generating")):
+                    millis = int(round(time.time() * 1000))
+                    os.rename(helpers.get_tileset_filename(self, "generating"), '{}_{}'.format(helpers.get_tileset_filename(self, "generating"), millis))
 
-        # TODO: if a tile set is actually being generated, do not regenerate it.
-        # TODO: and force user to cancel it job and then start another one
-        # if there is an old _generating one around, back it up
-        if os.path.isfile(helpers.get_tileset_filename(self, "generating")):
-            millis = int(round(time.time() * 1000))
-            print 'wwww',  helpers.get_tileset_filename(self, "generating")
-            print 'xxx', '{}_{}'.format(millis, helpers.get_tileset_filename(self, "generating"))
-            os.rename(helpers.get_tileset_filename(self, "generating"), '{}_{}'.format(helpers.get_tileset_filename(self, "generating"), millis))
+                # generate the cache
+                progress_log_filename = helpers.get_tileset_filename(self, "progress_log")
+                out = open(progress_log_filename, 'w+')
+                progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
+                tasks = seed_conf.seeds(['tileset_seed'])
+                # launch the task as another thread, seeder.seed(tasks=self.tasks, dry_run=False, progress_logger=progress_logger)
+                thread = Thread(target=self.seed_, args=(tasks, progress_logger))
+                helpers.thread_map[self.id] = thread
+                thread.start()
+                res = 'Started\n Check progress using: <server addres>/api/tileset/<tileset id>/progress'
+            else:
+                res = 'NOTE: already running\n Check progress using: <server addres>/api/tileset/<tileset id>/progress'
 
-        # generate the cache
-        progress_log_filename = helpers.get_tileset_filename(self, "progress_log")
-        out = open(progress_log_filename, 'w+')
-        progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
-        self.tasks = seed_conf.seeds(['tileset_seed'])
-        seeder.seed(self.tasks, dry_run=False, progress_logger=progress_logger)
+        return res #'completed. filesize: {}, created_at: {}'.format(self.filesize, self.created_at)
 
-
+    def seed_(self, tasks, progress_logger):
+        seeder.seed(tasks=tasks, dry_run=False, progress_logger=progress_logger)
         # back up the last one, renamed the _generating one to the main name
         if os.path.isfile(helpers.get_tileset_filename(self)):
             millis = int(round(time.time() * 1000))
@@ -74,7 +80,8 @@ class Tileset(models.Model):
 
         os.rename(helpers.get_tileset_filename(self, "generating"), helpers.get_tileset_filename(self))
         helpers.update_tileset_stats(self)
-        return 'completed. filesize: {}, created_at: {}'.format(self.filesize, self.created_at)
+        with helpers.thread_map_lock:
+            helpers.thread_map.pop(self.id, None)
 
     def get_progress(self):
         progress_log_filename = helpers.get_tileset_filename(self, "progress_log")

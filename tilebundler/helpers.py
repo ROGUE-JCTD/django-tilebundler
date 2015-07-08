@@ -11,8 +11,10 @@ from mapproxy.seed import util
 import os
 import base64
 import yaml
-import time
+import threading
 
+thread_map_lock = threading.Lock()
+thread_map = {}
 
 def generate_confs(tileset, ignore_warnings=True, renderd=False):
     """
