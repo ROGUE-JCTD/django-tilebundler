@@ -6,15 +6,13 @@ from mapproxy.config.spec import validate_mapproxy_conf
 from django.conf import settings
 from django.views.static import serve
 from datetime import datetime
-from mapproxy.seed import seeder
-from mapproxy.seed import util
 import os
 import base64
 import yaml
-import threading
+import multiprocessing
 
-thread_map_lock = threading.Lock()
-thread_map = {}
+tasks_dict = multiprocessing.Manager().dict()
+tasks_lock = multiprocessing.Lock()
 
 def generate_confs(tileset, ignore_warnings=True, renderd=False):
     """

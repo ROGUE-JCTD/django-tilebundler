@@ -2,12 +2,12 @@ from django.db import models
 from django.conf import settings
 from mapproxy.seed import seeder
 from mapproxy.seed import util
-from threading import Thread
+import multiprocessing
 import helpers
 import os
 import time
 import json
-
+import psutil
 
 class Tileset(models.Model):
 
@@ -45,47 +45,72 @@ class Tileset(models.Model):
     def to_json(self):
         return json.dumps(self.to_minimal_dict())
 
+    def stop(self):
+        res = {"status": "not found"}
+        with helpers.tasks_lock:
+            pid = helpers.tasks_dict.get(self.id, None)
+            if pid:
+                process = psutil.Process(pid=pid)
+                if process:
+                    children = process.children()
+                    for c in children:
+                        c.terminate()
+                    process.terminate()
+                    helpers.tasks_dict[self.id] = None
+                    res = {"status": "terminated"}
+        return res
+
     def generate(self):
         res = ""
-        with helpers.thread_map_lock:
-            thread = helpers.thread_map.get(self.id, None)
-            if not thread:
+        with helpers.tasks_lock:
+            pid = helpers.tasks_dict.get(self.id, None)
+            if not pid:
                 mapproxy_conf, seed_conf = helpers.generate_confs(self)
-                # if there is an old _generating one around, back it up
-                if os.path.isfile(helpers.get_tileset_filename(self, "generating")):
-                    millis = int(round(time.time() * 1000))
-                    os.rename(helpers.get_tileset_filename(self, "generating"), '{}_{}'.format(helpers.get_tileset_filename(self, "generating"), millis))
 
-                # generate the cache
+                # if there is an old _generating one around, back it up
+                backup_millis = int(round(time.time() * 1000))
+                if os.path.isfile(helpers.get_tileset_filename(self, "generating")):
+                    os.rename(helpers.get_tileset_filename(self, "generating"), '{}_{}'.format(helpers.get_tileset_filename(self, "generating"), backup_millis))
+
+                # if there is an old progress_log around, back it up
+                if os.path.isfile(helpers.get_tileset_filename(self, "progress_log")):
+                    os.rename(helpers.get_tileset_filename(self, "progress_log"), '{}_{}'.format(helpers.get_tileset_filename(self, "generating"), backup_millis))
+
+                # generate the new mbtiles as name.generating file
                 progress_log_filename = helpers.get_tileset_filename(self, "progress_log")
                 out = open(progress_log_filename, 'w+')
                 progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
                 tasks = seed_conf.seeds(['tileset_seed'])
-                # launch the task as another thread, seeder.seed(tasks=self.tasks, dry_run=False, progress_logger=progress_logger)
-                thread = Thread(target=self.seed_, args=(tasks, progress_logger))
-                helpers.thread_map[self.id] = thread
-                thread.start()
-                res = 'Started\n Check progress using: <server addres>/api/tileset/<tileset id>/progress'
+                # launch the task using another process
+                process = multiprocessing.Process(target=Tileset.seed_, args=(self, tasks, progress_logger, helpers.tasks_dict, helpers.tasks_lock))
+                process.start()
+                helpers.tasks_dict[self.id] = process.pid
+                res = {"status": "started"}
             else:
-                res = 'NOTE: already running\n Check progress using: <server addres>/api/tileset/<tileset id>/progress'
+                res = {"status": "running"}
+        return res
 
-        return res #'completed. filesize: {}, created_at: {}'.format(self.filesize, self.created_at)
-
-    def seed_(self, tasks, progress_logger):
+    @staticmethod
+    def seed_(tileset, tasks, progress_logger, tasks_dict, tasks_lock):
+        process = psutil.Process(pid=os.getpid())
+        print '----[ start seeding. tileset {}'.format(tileset.id)
         seeder.seed(tasks=tasks, dry_run=False, progress_logger=progress_logger)
-        # back up the last one, renamed the _generating one to the main name
-        if os.path.isfile(helpers.get_tileset_filename(self)):
-            millis = int(round(time.time() * 1000))
-            os.rename(helpers.get_tileset_filename(self), '{}_{}'.format(helpers.get_tileset_filename(self), millis))
 
-        os.rename(helpers.get_tileset_filename(self, "generating"), helpers.get_tileset_filename(self))
-        helpers.update_tileset_stats(self)
-        with helpers.thread_map_lock:
-            helpers.thread_map.pop(self.id, None)
+        # now that we have generated the new mbtiles file, backup the last one, then rename
+        # the _generating one to the main name
+        if os.path.isfile(helpers.get_tileset_filename(tileset)):
+            millis = int(round(time.time() * 1000))
+            os.rename(helpers.get_tileset_filename(tileset), '{}_{}'.format(helpers.get_tileset_filename(tileset), millis))
+        os.rename(helpers.get_tileset_filename(tileset, "generating"), helpers.get_tileset_filename(tileset))
+
+        #TODO: add update back!
+        ###helpers.update_tileset_stats(tileset)
+        with tasks_lock:
+            tasks_dict[tileset.id] = None
 
     def get_progress(self):
         progress_log_filename = helpers.get_tileset_filename(self, "progress_log")
-        res = "Progress Not Found"
+        res = {"status": "progress not found"}
         if os.path.isfile(progress_log_filename):
             with open(progress_log_filename, 'r') as f:
                 lines = f.read().replace('\r', '\n')
@@ -115,11 +140,17 @@ class Tileset(models.Model):
                 if latest_progress:
                     latest_step[2] = latest_progress[1]
 
+                status = "running"
+                if latest_step[2][0:-1] == "100.00" and latest_step[1] == "0":
+                    status = "completed"
+
                 res = {
-                    "completed": latest_step[2],
-                    "current_zoom_level": latest_step[1],
-                    "update_time": latest_step[0][1:-1],
-                    "estimated_completion_time": latest_step[len(latest_step) - 1]
+                    "status": status,
                 }
 
+                if status != "completed":
+                    res["percent_completed"] = latest_step[2]
+                    res["current_zoom_level"] = latest_step[1]
+                    res["update_time"] = latest_step[0][1:-1]
+                    res["estimated_completion_time"] = latest_step[len(latest_step) - 1]
         return res
