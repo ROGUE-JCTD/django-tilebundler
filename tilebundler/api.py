@@ -2,10 +2,12 @@ from tastypie.resources import ModelResource
 from tastypie.authentication import BasicAuthentication
 from tastypie.utils import trailing_slash
 from django.conf.urls import url
+from django.views.static import serve
 from .models import Tileset
 from tastypie import fields
 from django.contrib.auth import get_user_model
 import helpers
+import os
 
 
 class UserResource(ModelResource):
@@ -74,7 +76,14 @@ class TilesetResource(ModelResource):
             bundle=basic_bundle,
             **self.remove_api_resource_names(kwargs))
 
-        return helpers.tileset_download(request, tileset)
+        filename = helpers.get_tileset_filename(tileset)
+        filename = os.path.abspath(filename)
+        if os.path.isfile(filename):
+            response = serve(request, os.path.basename(filename), os.path.dirname(filename))
+            response['Content-Disposition'] = 'attachment; filename="{}"'.format(os.path.basename(filename))
+        else:
+            response = self.create_response(request, {'status': 'not generated'})
+        return response
 
     def status(self, request, **kwargs):
         """ proxy for the helpers.tileset_download method """

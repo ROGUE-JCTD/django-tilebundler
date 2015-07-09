@@ -1,5 +1,4 @@
 from django.conf import settings
-from django.views.static import serve
 
 from mapproxy.seed.seeder import seed
 from mapproxy.seed.config import SeedingConfiguration, SeedConfigurationError, ConfigurationError
@@ -218,82 +217,74 @@ def u_to_str(string):
     return string.encode('ascii', 'ignore')
 
 
-def tileset_download(request, tileset):
-    filename = get_tileset_filename(tileset)
-    filename = os.path.abspath(filename)
-    response = serve(request, os.path.basename(filename), os.path.dirname(filename))
-    response['Content-Disposition'] = 'attachment; filename="{}"'.format(os.path.basename(filename))
-    return response
-
-
 def is_int_str(v):
     v = str(v).strip()
     return v == '0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
 
 
 def get_status(tileset):
-    res = {'status': 'progress log not found'}
+    res = {'status': 'unknown'}
 
-    # if there is a file on disk, return the time it was last updated
-    tileset_filename = get_tileset_filename(tileset)
-    if os.path.isfile(tileset_filename):
-        stat = os.stat(tileset_filename)
-        # a bit much to check disk but will show mismatches between log and mbtiles file on disk
-        if stat:
-            res['file_last_update'] = datetime.fromtimestamp(stat.st_ctime)
-            res['file_size'] = stat.st_size
+    pid = tasks_dict.get(tileset.id, None)
+    # if tileset generation is not in progress
+    if not pid:
+        # if there is a .mbtiles file on disk, get the size and time last updated
+        tileset_filename = get_tileset_filename(tileset)
+        if os.path.isfile(tileset_filename):
+            res['status'] = 'ready'
+            stat = os.stat(tileset_filename)
+            if stat:
+                res['file_last_update'] = datetime.fromtimestamp(stat.st_ctime)
+                res['file_size'] = stat.st_size
+        else:
+            res['status'] = 'not generated'
+
+        # if there is a file .generating file on disk, it mean that last generation was stopped!
+        # get the size and time last updated
+        tileset_generating_filename = get_tileset_filename(tileset, 'generating')
+        if os.path.isfile(tileset_generating_filename):
+            stat = os.stat(tileset_generating_filename)
+            if stat:
+                res['stopped_file_last_update'] = datetime.fromtimestamp(stat.st_ctime)
+                res['stopped_file_file_size'] = stat.st_size
     else:
-        res['status'] = 'file not found'
-        return res
+        # if tileset generation is in progress
+        res['status'] = 'in progress'
+        progress_log_filename = get_tileset_filename(tileset, 'progress_log')
+        if os.path.isfile(progress_log_filename):
+            with open(progress_log_filename, 'r') as f:
+                lines = f.read().replace('\r', '\n')
+                lines = lines.split('\n')
 
-    progress_log_filename = get_tileset_filename(tileset, 'progress_log')
-    if os.path.isfile(progress_log_filename):
-        res['status'] = 'unknown'
+            # an actual progress step update which looks like:
+            # "[15:11:11]  4  50.00% 0.00000, 672645.84891, 18432942.24503, 18831637.78456 (112 tiles) ETA: 2015-07-07-15:11:12"\n
+            latest_step = None
+            # a progress update on the current step which looks like:
+            # "[15:11:16]  87.50%	0000                 ETA: 2015-07-07-15:11:17'\r
+            latest_progress = None
+            if len(lines) > 0:
+                for line in lines[::-1]:
+                    tokens = line.split()
+                    if len(tokens) > 2:
+                        if is_int_str(tokens[1]):
+                            latest_step = tokens
+                            break
+                        elif tokens[1].endswith('%'):
+                            if latest_progress is None:
+                                # keep going, don't break
+                                latest_progress = tokens
+                                continue
+            if latest_step:
+                # if we have a step %, up date the progress %
+                if latest_progress:
+                    latest_step[2] = latest_progress[1]
 
-        with open(progress_log_filename, 'r') as f:
-            lines = f.read().replace('\r', '\n')
-            lines = lines.split('\n')
-
-        # an actual progress step update which looks like:
-        # "[15:11:11]  4  50.00% 0.00000, 672645.84891, 18432942.24503, 18831637.78456 (112 tiles) ETA: 2015-07-07-15:11:12"\n
-        latest_step = None
-        # a progress update on the current step which looks like:
-        # "[15:11:16]  87.50%	0000                 ETA: 2015-07-07-15:11:17'\r
-        latest_progress = None
-        # the
-        last_line_is_step = True
-        if len(lines) > 0:
-            for line in lines[::-1]:
-                tokens = line.split()
-                if len(tokens) > 2:
-                    if is_int_str(tokens[1]):
-                        latest_step = tokens
-                        break
-                    elif tokens[1].endswith('%'):
-                        last_line_is_step = False
-                        if latest_progress is None:
-                            # keep going, don't break
-                            latest_progress = tokens
-                            continue
-        if latest_step:
-            # if we have a step %, up date the progress %
-            if latest_progress:
-                latest_step[2] = latest_progress[1]
-
-            # if the last line of the file is a 'step' and not a 'progress' and percent completed is 100,
-            # seeding was successfully completed.
-            percent = latest_step[2][0:-1]
-            if percent == '100.00' and last_line_is_step:
-                res['status'] = 'completed'
-            else:
-                res['percent_completed'] = percent
-                res['current_zoom_level'] = latest_step[1]
-                res['update_time'] = latest_step[0][1:-1]
-                res['estimated_completion_time'] = latest_step[len(latest_step) - 1]
-                # if we have inprogress info from the log but the pid doesn't exist, it was terminated
-                pid = tasks_dict.get(tileset.id, None)
-                if not pid:
-                    res['status'] = 'terminated'
+            res['percent_completed'] = latest_step[2][0:-1]
+            res['current_zoom_level'] = latest_step[1]
+            res['update_time'] = latest_step[0][1:-1]
+            res['estimated_completion_time'] = latest_step[len(latest_step) - 1]
+        else:
+            res['status'] = 'in progress, but log not found'
     return res
 
 

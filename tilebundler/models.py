@@ -37,7 +37,7 @@ class Tileset(models.Model):
 
     # terminate the seeding of this tileset!
     def stop(self):
-        res = {'status': 'not found'}
+        res = {'status': 'not in progress'}
         with helpers.tasks_lock:
             pid = helpers.tasks_dict.get(self.id, None)
             if pid and pid is not 'preparing_to_start':
@@ -48,7 +48,7 @@ class Tileset(models.Model):
                         c.terminate()
                     process.terminate()
                     helpers.tasks_dict[self.id] = None
-                    res = {'status': 'terminated'}
+                    res = {'status': 'stopped'}
         return res
 
     # use the tileset object as input to start creation of the mbtiles
@@ -68,5 +68,7 @@ class Tileset(models.Model):
                 res = {'status': 'already started'}
         return res
 
+    # TODO: the the log for the mbtiles being generated should be seperate from the log for the last successfully downloaded
+    #       file.
     def status(self):
         return helpers.get_status(self)
