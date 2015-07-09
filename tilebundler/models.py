@@ -2,7 +2,6 @@ from django.db import models
 from django.conf import settings
 
 import threading
-import json
 import psutil
 
 import helpers
@@ -29,20 +28,12 @@ class Tileset(models.Model):
     # region
     geom = models.TextField(blank=True)
 
+    # size of the tileset after /generate is invoked. /status will return the size of the file on disk and
+    # actual last modified date of file at teh time of request.
     filesize = models.BigIntegerField(editable=False, default=0)
 
     def __unicode__(self):
         return self.name
-
-    def to_minimal_dict(self):
-        fields = ['id', 'name', 'geom', 'layer_name', 'server_url', 'server_service_type']
-        d = {}
-        for attr in fields:
-            d[attr] = getattr(self, attr)
-        return d
-
-    def to_json(self):
-        return json.dumps(self.to_minimal_dict())
 
     # terminate the seeding of this tileset!
     def stop(self):
