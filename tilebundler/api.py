@@ -35,9 +35,9 @@ class TilesetResource(ModelResource):
             url(r"^(?P<resource_name>%s)/(?P<pk>\w[\w/-]*)/download%s$" %
                 (self._meta.resource_name, trailing_slash()),
                 self.wrap_view('download'), name="api_tileset_download"),
-            url(r"^(?P<resource_name>%s)/(?P<pk>\w[\w/-]*)/progress%s$" %
+            url(r"^(?P<resource_name>%s)/(?P<pk>\w[\w/-]*)/status%s$" %
                 (self._meta.resource_name, trailing_slash()),
-                self.wrap_view('progress'), name="api_tileset_progress"),
+                self.wrap_view('status'), name="api_tileset_status"),
             url(r"^(?P<resource_name>%s)/(?P<pk>\w[\w/-]*)/stop%s$" %
                 (self._meta.resource_name, trailing_slash()),
                 self.wrap_view('stop'), name="api_tileset_stop"),
@@ -76,7 +76,7 @@ class TilesetResource(ModelResource):
 
         return helpers.tileset_download(request, tileset)
 
-    def progress(self, request, **kwargs):
+    def status(self, request, **kwargs):
         """ proxy for the helpers.tileset_download method """
 
         # method check to avoid bad requests
@@ -90,7 +90,7 @@ class TilesetResource(ModelResource):
             bundle=basic_bundle,
             **self.remove_api_resource_names(kwargs))
 
-        return self.create_response(request, tileset.get_progress())
+        return self.create_response(request, tileset.status())
 
     def stop(self, request, **kwargs):
         """ proxy for the helpers.tileset_download method """
