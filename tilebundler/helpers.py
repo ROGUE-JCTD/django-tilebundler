@@ -58,15 +58,9 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
       "sources":{
         "tileset_source":{
           "type":"wms",
-          "req":{
-            "url":"http://admin:geoserver@192.168.99.100/geoserver/wms?",
-            "layers":"geonode:ne_50m_admin_0_countries"
-          },
-          "http":{
-            "headers":{
-              "Authorization":"Basic YWRtaW46Z2Vvc2VydmVy"
-            }
-          }
+          "url": null,
+          "req": null,
+          "http": null,
         }
       },
       "grids":{
@@ -116,8 +110,23 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
     print '---- mbtiles file to generate: {}'.format(get_tileset_filename(tileset))
 
     mapproxy_conf['sources']['tileset_source']['type'] = u_to_str(tileset.server_service_type)
-    mapproxy_conf['sources']['tileset_source']['req']['url'] = u_to_str(tileset.server_url)
-    mapproxy_conf['sources']['tileset_source']['req']['layers'] = u_to_str(tileset.layer_name)
+
+    if u_to_str(tileset.server_service_type.lower()) == 'wms':
+        """
+        "req":{
+          "url":"http://admin:geoserver@192.168.99.100/geoserver/wms?",
+          "layers":"geonode:ne_50m_admin_0_countries"
+        },
+        """
+        mapproxy_conf['sources']['tileset_source']['req'] = {}
+        mapproxy_conf['sources']['tileset_source']['req']['url'] = u_to_str(tileset.server_url)
+        mapproxy_conf['sources']['tileset_source']['req']['layers'] = u_to_str(tileset.layer_name)
+    elif u_to_str(tileset.server_service_type.lower()) == 'tile':
+        """
+        "url": "http://a.tile.openstreetmap.org/%(z)s/%(x)s/%(y)s.png",
+        """
+        mapproxy_conf['sources']['tileset_source']['url'] = u_to_str(tileset.server_url)
+
     mapproxy_conf['layers'][0]['name'] = u_to_str(tileset.layer_name)
     mapproxy_conf['layers'][0]['title'] = u_to_str(tileset.layer_name)
     mapproxy_conf['caches']['tileset_cache']['cache']['filename'] = get_tileset_filename(tileset, 'generating')
@@ -140,7 +149,7 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
             geom_dir = '{}/geoms'.format(get_tileset_dir())
             if not os.path.exists(geom_dir):
                 os.makedirs(geom_dir)
-            # TODO: remove geom files when done
+            # TODO: remove geom files when done or pair them up with the actual tileset files?
             geom_filename = '{}/geoms/{}.{}'.format(get_tileset_dir(), tileset.name, geom_type)
             with open(geom_filename, 'w+') as geom_file:
                 geom_file.write(tileset.geom)
@@ -168,7 +177,16 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
     print yaml.dump(seed_conf)
 
     if tileset.server_username and tileset.server_password:
+        """
+        "http":{
+          "headers":{
+            "Authorization":"Basic YWRtaW46Z2Vvc2VydmVy"
+          }
+        }
+        """
         encoded = base64.b64encode('{}:{}'.format(tileset.server_username, tileset.server_password))
+        mapproxy_conf['sources']['tileset_source']['http'] = {}
+        mapproxy_conf['sources']['tileset_source']['http']['headers'] = {}
         mapproxy_conf['sources']['tileset_source']['http']['headers']['Authorization'] = 'Basic {}'.format(encoded)
 
     errors, informal_only = validate_mapproxy_conf(mapproxy_conf)

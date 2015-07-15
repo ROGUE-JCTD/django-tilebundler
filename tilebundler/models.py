@@ -21,7 +21,7 @@ class Tileset(models.Model):
     server_password = models.CharField(blank=True, max_length=30)
 
     # layer
-    layer_name = models.CharField(unique=True, max_length=200)
+    layer_name = models.CharField(blank=True, max_length=200)
     layer_zoom_start = models.IntegerField(blank=True, default=0)
     layer_zoom_stop = models.IntegerField()
 

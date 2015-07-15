@@ -5,7 +5,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='django-tilebundler',
-    version='0.1-alpha2',
+    version='0.1-alpha4',
     author='Syrus Mesdaghi',
     author_email='geoshape.org@gmail.com',
     url='https://github.com/ROGUE-JCTD/django-tilebundler',

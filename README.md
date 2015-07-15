@@ -17,7 +17,77 @@ Get list of all tileset objects as JSON
 
 **Sample response**
 ```
-{"meta": {"limit": 20, "next": null, "offset": 0, "previous": null, "total_count": 1}, "objects": [{"created_at": "2015-07-09T18:45:15", "created_by": {"first_name": "", "last_name": "", "resource_uri": "", "username": "admin"}, "filesize": "1556480", "geom": "POLYGON((-4.5703125 84.0228901101526,165.5859375 84.0228901101526,165.5859375 6.031310707125822,-4.5703125 6.031310707125822,-4.5703125 84.0228901101526))", "id": 1, "layer_name": "osm", "layer_zoom_start": 0, "layer_zoom_stop": 5, "name": "osm", "resource_uri": "/api/tileset/1/", "server_service_type": "wms", "server_url": "http://osm.omniscale.net/proxy/service", "server_username": ""}]}
+{
+  "meta": {
+    "limit": 20,
+    "next": null,
+    "offset": 0,
+    "previous": null,
+    "total_count": 3
+  },
+  "objects": [
+    {
+      "created_at": "2015-07-15T12:45:39",
+      "created_by": {
+        "first_name": "",
+        "last_name": "",
+        "resource_uri": "",
+        "username": "admin"
+      },
+      "filesize": "3145728",
+      "geom": "POLYGON((-4.5703125 84.0228901101526,165.5859375 84.0228901101526,165.5859375 6.031310707125822,-4.5703125 6.031310707125822,-4.5703125 84.0228901101526))",
+      "id": 1,
+      "layer_name": "geonode:ne_50m_admin_0_countries",
+      "layer_zoom_start": 0,
+      "layer_zoom_stop": 5,
+      "name": "country_boundaries",
+      "resource_uri": "/api/tileset/1/",
+      "server_service_type": "wms",
+      "server_url": "http://192.168.99.100/geoserver/wms",
+      "server_username": "admin"
+    },
+    {
+      "created_at": "2015-07-15T12:16:07",
+      "created_by": {
+        "first_name": "",
+        "last_name": "",
+        "resource_uri": "",
+        "username": "admin"
+      },
+      "filesize": "1368064",
+      "geom": "[-77.6843, 38.4299, -76.3152, 39.2982]",
+      "id": 2,
+      "layer_name": "osm",
+      "layer_zoom_start": 0,
+      "layer_zoom_stop": 12,
+      "name": "osm_wms_dc",
+      "resource_uri": "/api/tileset/2/",
+      "server_service_type": "wms",
+      "server_url": "http://osm.omniscale.net/proxy/service",
+      "server_username": ""
+    },
+    {
+      "created_at": "2015-07-15T12:43:56",
+      "created_by": {
+        "first_name": "",
+        "last_name": "",
+        "resource_uri": "",
+        "username": "admin"
+      },
+      "filesize": "4706304",
+      "geom": "",
+      "id": 3, 
+      "layer_name": "syrus",
+      "layer_zoom_start": 0,
+      "layer_zoom_stop": 5,
+      "name": "openstreetmap",
+      "resource_uri": "/api/tileset/3/",
+      "server_service_type": "tile",
+      "server_url": "http://a.tile.openstreetmap.org/%(z)s/%(x)s/%(y)s.png",
+      "server_username": ""
+    }
+  ]
+}
 ```
 
 
@@ -27,7 +97,26 @@ Get tileset object with id 1 as JSON
 
 **sample response**
 ```
-{"created_at": "2015-07-09T18:45:15", "created_by": {"first_name": "", "last_name": "", "resource_uri": "", "username": "admin"}, "filesize": "1556480", "geom": "POLYGON((-4.5703125 84.0228901101526,165.5859375 84.0228901101526,165.5859375 6.031310707125822,-4.5703125 6.031310707125822,-4.5703125 84.0228901101526))", "id": 1, "layer_name": "osm", "layer_zoom_start": 0, "layer_zoom_stop": 5, "name": "osm", "resource_uri": "/api/tileset/1/", "server_service_type": "wms", "server_url": "http://osm.omniscale.net/proxy/service", "server_username": ""}
+{
+  "created_at": "2015-07-15T04:33:07",
+  "created_by": {
+    "first_name": "",
+    "last_name": "",
+    "resource_uri": "",
+    "username": "admin"
+  },
+  "filesize": "8192000",
+  "geom": "[-83.507, 25.160, -78.030, 29.128]",
+  "id": 1,
+  "layer_name": "osm",
+  "layer_zoom_start": 0,
+  "layer_zoom_stop": 12,
+  "name": "osm_fl",
+  "resource_uri": "/api/tileset/1/",
+  "server_service_type": "wms",
+  "server_url": "http://osm.omniscale.net/proxy/service",
+  "server_username": ""
+}
 ```
 
 `/api/tileset/1/generate`
