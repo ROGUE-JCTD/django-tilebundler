@@ -57,10 +57,6 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
       },
       "sources":{
         "tileset_source":{
-          "type":"wms",
-          "url": null,
-          "req": null,
-          "http": null,
         }
       },
       "grids":{
@@ -297,10 +293,10 @@ def get_status(tileset):
                 if latest_progress:
                     latest_step[2] = latest_progress[1]
 
-            res['percent_completed'] = latest_step[2][0:-1]
-            res['current_zoom_level'] = latest_step[1]
-            res['update_time'] = latest_step[0][1:-1]
-            res['estimated_completion_time'] = latest_step[len(latest_step) - 1]
+                res['percent_completed'] = latest_step[2][0:-1]
+                res['current_zoom_level'] = latest_step[1]
+                res['update_time'] = latest_step[0][1:-1]
+                res['estimated_completion_time'] = latest_step[len(latest_step) - 1]
         else:
             res['status'] = 'in progress, but log not found'
     return res
