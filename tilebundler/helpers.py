@@ -7,6 +7,8 @@ from mapproxy.config.loader import ProxyConfiguration
 from mapproxy.config.spec import validate_mapproxy_conf
 from mapproxy.seed import seeder
 from mapproxy.seed import util
+from django.core.cache import cache
+import tasks
 
 from datetime import datetime
 import base64
@@ -300,6 +302,68 @@ def get_status(tileset):
         else:
             res['status'] = 'in progress, but log not found'
     return res
+
+def generate(tileset):
+    res = {'status': 'unknown'}
+    lock_id = 'tileset-generate-locked-{}'.format(tileset.id)
+    # cache.add fails if if the key already exists
+    acquire_lock = lambda: cache.add(lock_id, 'true', 60*60)
+    # memcache delete is very slow, but should be fine
+    release_lock = lambda: cache.delete(lock_id)
+
+    #print 'Generating tileset name: {}, id: {}'.format(tileset.name, tileset.id)
+
+    #print 'lock_id: {}, pre aquire: {}'.format(lock_id, cache.get(lock_id))
+    if acquire_lock():
+        #print 'lock_id: {}, post aquire: {}'.format(lock_id, cache.get(lock_id))
+        cache.set(lock_id, 'True')
+        #print 'lock_id: {}, post2 aquire: {}'.format(lock_id, cache.get(lock_id))
+        try:
+            tasks.generate.delay(tileset.id)
+            #tasks.add.delay(tileset.id, 5, 10)
+            res = {'status': 'started'}
+        finally:
+            #release_lock()
+            print 'not releasgin lock for now'
+    else:
+        print 'lock_id: {}, failed to aquire: {}'.format(lock_id, cache.get(lock_id))
+        res = {'status': 'already started'}
+        print 'already generating. did not start again. tileset name: {}, id: {}'.format(tileset.name, tileset.id)
+    return res
+    
+
+def seed_task(tileset):
+    mapproxy_conf, seed_conf = generate_confs(tileset)
+
+    # if there is an old _generating one around, back it up
+    backup_millis = int(round(time.time() * 1000))
+    if os.path.isfile(get_tileset_filename(tileset, 'generating')):
+        os.rename(get_tileset_filename(tileset, 'generating'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
+
+    # if there is an old progress_log around, back it up
+    if os.path.isfile(get_tileset_filename(tileset, 'progress_log')):
+        os.rename(get_tileset_filename(tileset, 'progress_log'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
+
+    # generate the new mbtiles as name.generating file
+    progress_log_filename = get_tileset_filename(tileset, 'progress_log')
+    out = open(progress_log_filename, 'w+')
+    progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
+    tasks = seed_conf.seeds(['tileset_seed'])
+
+    # launch the task using another process
+    print '----[ start seeding. tileset {}'.format(tileset.id)
+    seeder.seed(tasks=tasks, progress_logger=progress_logger)
+
+    # now that we have generated the new mbtiles file, backup the last one, then rename
+    # the _generating one to the main name
+    if os.path.isfile(get_tileset_filename(tileset)):
+        millis = int(round(time.time() * 1000))
+        os.rename(get_tileset_filename(tileset), '{}_{}'.format(get_tileset_filename(tileset), millis))
+    os.rename(get_tileset_filename(tileset, 'generating'), get_tileset_filename(tileset))
+
+    # update the tileset object with teh actual size of the generated mbtile
+    update_tileset_stats(tileset)
+
 
 
 # since thread has access to the applications memory space, use a thread to gather and setup info needed for the

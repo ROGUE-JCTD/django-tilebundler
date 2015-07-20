@@ -32,6 +32,9 @@ class Tileset(models.Model):
     # actual last modified date of file at teh time of request.
     filesize = models.BigIntegerField(editable=False, default=0)
 
+    # 'not generated', 'in progress', 'ready'
+    # state = models.CharField(editable=False, default=0)
+
     def __unicode__(self):
         return self.name
 
@@ -53,19 +56,10 @@ class Tileset(models.Model):
 
     # use the tileset object as input to start creation of the mbtiles
     def generate(self):
-        with helpers.tasks_lock:
-            pid = helpers.tasks_dict.get(self.id, None)
-            if not pid:
-                # set the pid to 'preparing_to_start' when we start the thread. When process starts, it will update it
-                # to be the actual pid
-                helpers.tasks_dict[self.id] = 'preparing_to_start'
-                thread = threading.Thread(target=helpers.seed_thread, args=(self,))
-                # when there are only daemon threads left, the program should exit
-                thread.daemon = True
-                thread.start()
-                res = {'status': 'started'}
-            else:
-                res = {'status': 'already started'}
+        print '-------------- models.Tileset.generate'; import sys; sys.stdout.flush()
+        #import pdb; pdb.set_trace()
+
+        res = helpers.generate(self)
         return res
 
     # TODO: the the log for the mbtiles being generated should be seperate from the log for the last successfully downloaded
