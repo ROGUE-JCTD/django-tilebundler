@@ -1,6 +1,6 @@
 from django.db import models
 from django.conf import settings
-
+import celery
 import threading
 import psutil
 
@@ -33,7 +33,7 @@ class Tileset(models.Model):
     filesize = models.BigIntegerField(editable=False, default=0)
 
     # 'not generated', 'in progress', 'ready'
-    # state = models.CharField(editable=False, default=0)
+    status = models.CharField(editable=False, default='not generated')
 
     def __unicode__(self):
         return self.name
@@ -58,8 +58,11 @@ class Tileset(models.Model):
     def generate(self):
         print '-------------- models.Tileset.generate'; import sys; sys.stdout.flush()
         #import pdb; pdb.set_trace()
-
-        res = helpers.generate(self)
+        res = {'status': 'started'}
+        helpers.seed_process_db_connection(self)
+        #ass = celery.current_app.send_task('tilebundler.tasks.generate', (self.id,))
+        #print 'yoyo'
+        #generate.delay(self.id)
         return res
 
     # TODO: the the log for the mbtiles being generated should be seperate from the log for the last successfully downloaded
