@@ -1,5 +1,5 @@
 from django.conf import settings
-
+from celery.task import task
 from mapproxy.seed.seeder import seed
 from mapproxy.seed.config import SeedingConfiguration, SeedConfigurationError, ConfigurationError
 from mapproxy.seed.spec import validate_seed_conf
@@ -302,37 +302,6 @@ def get_status(tileset):
         else:
             res['status'] = 'in progress, but log not found'
     return res
-
-#def generate(tileset):
-    #res = {'status': 'unknown'}
-    #res = {'yoyo': 'syrus'}
-    #celery.current_app.send_task('tilebundler.tasks.generate', (tileset.id,))
-    #return res
-    #lock_id = 'tileset-generate-locked-{}'.format(tileset.id)
-    # cache.add fails if if the key already exists
-    #acquire_lock = lambda: cache.add(lock_id, 'true', 60*60)
-    # memcache delete is very slow, but should be fine
-    #release_lock = lambda: cache.delete(lock_id)
-
-    #print 'Generating tileset name: {}, id: {}'.format(tileset.name, tileset.id)
-
-    #print 'lock_id: {}, pre aquire: {}'.format(lock_id, cache.get(lock_id))
-    #if acquire_lock():
-    #    #print 'lock_id: {}, post aquire: {}'.format(lock_id, cache.get(lock_id))
-    #    cache.set(lock_id, 'True')
-    #    #print 'lock_id: {}, post2 aquire: {}'.format(lock_id, cache.get(lock_id))
-    #    try:
-    #        tasks.generate.delay(tileset.id)
-    #        #tasks.add.delay(tileset.id, 5, 10)
-    #        res = {'status': 'started'}
-    #    finally:
-    #        #release_lock()
-    #        print 'not releasgin lock for now'
-    #else:
-    #    print 'lock_id: {}, failed to aquire: {}'.format(lock_id, cache.get(lock_id))
-    #    res = {'status': 'already started'}
-    #    print 'already generating. did not start again. tileset name: {}, id: {}'.format(tileset.name, tileset.id)
-    #return res
     
 
 # problem with this approach is that celery threads are demonic and the seeder will try to spawn child processes
@@ -374,8 +343,9 @@ def seed_celery(tileset):
 # since thread has access to the applications memory space, use a thread to gather and setup info needed for the
 # process that will do the seeding. Mapproxy will create child processes from the process we create here. The thread
 # will wait for the process to complete. When process completes, the thread will update information about the tileset
+from celery.task import task
 def seed_process_db_connection(tileset):
-    print '------ seed_process_db_connection 1'
+    print '------ seed_process_db_connection 1, tileset: {}'.format(tileset)
     mapproxy_conf, seed_conf = generate_confs(tileset)
     print '------ seed_process_db_connection 2'
 
@@ -402,20 +372,23 @@ def seed_process_db_connection(tileset):
     # launch the task using another process
     process = multiprocessing.Process(target=seed_process_db_connection__proc, args=(tileset.id, tasks, progress_logger, tasks_dict, tasks_lock))
     print '------ seed_process_db_connection 9'
-    process.start()
+    print '------ seed_process_db_connection 9.1'
+    pid = tasks_dict.get(tileset.id, None)
+    if pid == 'preparing_to_start':
+        process.start()
+        tasks_dict[tileset.id] = process.pid
     print '------ seed_process_db_connection 10'
 
 
 def seed_process_db_connection__proc(tileset_id, tasks, progress_logger, tasks_dict, tasks_lock):
     print '----[ start seeding. tileset {}'.format(tileset_id)
-
     print '------ seed_process_db_connection__proc 1'
     from models import Tileset
+    tileset = Tileset.objects.get(pk=tileset_id)
+
     print '------ seed_process_db_connection__proc 2, tileset_id: {}'.format(tileset_id)
     seeder.seed(tasks=tasks, progress_logger=progress_logger)
 
-    print '------ seed_process_db_connection__proc 3'
-    tileset = Tileset.objects.get(pk=tileset_id)
     print '------ seed_process_db_connection__proc 3.5, sets.name: {}'.format(tileset.name)
     print '------ seed_process_db_connection__proc 3.7, yaml.dump(tileset): {}'.format(yaml.dump(tileset))
     print '------ seed_process_db_connection__proc 4'
@@ -428,7 +401,45 @@ def seed_process_db_connection__proc(tileset_id, tasks, progress_logger, tasks_d
         os.rename(get_tileset_filename(tileset), '{}_{}'.format(get_tileset_filename(tileset), millis))
     os.rename(get_tileset_filename(tileset, 'generating'), get_tileset_filename(tileset))
     print '------ seed_process_db_connection__proc 5'
+    #update_tileset_stats(tileset)
+    """
+    causes exception if we want to update filesize
+  File "/usr/lib/python2.7/multiprocessing/process.py", line 258, in _bootstrap
+    self.run()
+  File "/usr/lib/python2.7/multiprocessing/process.py", line 114, in run
+    self._target(*self._args, **self._kwargs)
+  File "/syrus_dev/django-tilebundler/tilebundler/helpers.py", line 404, in seed_process_db_connection__proc
+    update_tileset_stats(tileset)
+  File "/syrus_dev/django-tilebundler/tilebundler/helpers.py", line 229, in update_tileset_stats
+    tileset.save()
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 545, in save
+    force_update=force_update, update_fields=update_fields)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 573, in save_base
+    updated = self._save_table(raw, cls, force_insert, force_update, using, update_fields)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 635, in _save_table
+    forced_update)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 679, in _do_update
+    return filtered._update(values) > 0
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/query.py", line 510, in _update
+    return query.get_compiler(self.db).execute_sql(None)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/sql/compiler.py", line 980, in execute_sql
+    cursor = super(SQLUpdateCompiler, self).execute_sql(result_type)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/sql/compiler.py", line 786, in execute_sql
+    cursor.execute(sql, params)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/backends/util.py", line 69, in execute
+    return super(CursorDebugWrapper, self).execute(sql, params)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/backends/util.py", line 53, in execute
+    return self.cursor.execute(sql, params)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/utils.py", line 99, in __exit__
+    six.reraise(dj_exc_type, dj_exc_value, traceback)
+  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/backends/util.py", line 53, in execute
+    return self.cursor.execute(sql, params)
+OperationalError: SSL error: sslv3 alert bad record mac
+    """
 
+
+    print '------ seed_process_db_connection__proc 6'
+    tasks_dict[tileset.id] = None
 
 
 # since thread has access to the applications memory space, use a thread to gather and setup info needed for the

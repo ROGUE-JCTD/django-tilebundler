@@ -33,37 +33,52 @@ class Tileset(models.Model):
     filesize = models.BigIntegerField(editable=False, default=0)
 
     # 'not generated', 'in progress', 'ready'
-    status = models.CharField(editable=False, default='not generated')
+    # status = models.CharField(editable=False, default='not generated')
 
     def __unicode__(self):
         return self.name
 
     # terminate the seeding of this tileset!
     def stop(self):
+        print '---- tileset.stop'
         res = {'status': 'not in progress'}
         with helpers.tasks_lock:
             pid = helpers.tasks_dict.get(self.id, None)
-            if pid and pid is not 'preparing_to_start':
-                process = psutil.Process(pid=pid)
-                if process:
-                    children = process.children()
-                    for c in children:
-                        c.terminate()
-                    process.terminate()
-                    helpers.tasks_dict[self.id] = None
-                    res = {'status': 'stopped'}
+            if pid:
+                print '---- tileset.stop, will stop, pid: {}'.format(pid)
+                res = {'status': 'stopped'}
+                helpers.tasks_dict[self.id] = None
+                if pid != 'preparing_to_start':
+                    process = psutil.Process(pid=pid)
+                    if process:
+                        children = process.children()
+                        for c in children:
+                            c.terminate()
+                        process.terminate()
+                else:
+                    res = {'status': 'debug, prevernted started!'}
+            else:
+                print '---- tileset.stop, will NOT stop. not running'
+
         return res
 
     # use the tileset object as input to start creation of the mbtiles
     def generate(self):
-        print '-------------- models.Tileset.generate'; import sys; sys.stdout.flush()
-        #import pdb; pdb.set_trace()
-        res = {'status': 'started'}
-        helpers.seed_process_db_connection(self)
-        #ass = celery.current_app.send_task('tilebundler.tasks.generate', (self.id,))
-        #print 'yoyo'
-        #generate.delay(self.id)
-        return res
+        print '---- tileset.generate'
+        with helpers.tasks_lock:
+            pid = helpers.tasks_dict.get(self.id, None)
+
+            if not pid:
+                print '---- tileset.generate, will generate'
+                # set the pid to 'preparing_to_start' when we start the thread. When process starts, it will update it
+                # to be the actual pid
+                helpers.tasks_dict[self.id] = 'preparing_to_start'
+                helpers.seed_process_db_connection(self)
+                res = {'status': 'started'}
+            else:
+                print '---- tileset.generate, will NOT generate. already running, pid: {}'.format(pid)
+                res = {'status': 'already started'}
+            return res
 
     # TODO: the the log for the mbtiles being generated should be seperate from the log for the last successfully downloaded
     #       file.
