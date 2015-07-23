@@ -1,5 +1,4 @@
 from django.conf import settings
-from celery.task import task
 from mapproxy.seed.seeder import seed
 from mapproxy.seed.config import SeedingConfiguration, SeedConfigurationError, ConfigurationError
 from mapproxy.seed.spec import validate_seed_conf
@@ -7,19 +6,15 @@ from mapproxy.config.loader import ProxyConfiguration
 from mapproxy.config.spec import validate_mapproxy_conf
 from mapproxy.seed import seeder
 from mapproxy.seed import util
-from django.db import connection
-import celery
 
 from datetime import datetime
 import base64
 import yaml
 import os
+import errno
 import time
+from dateutil import parser
 import multiprocessing
-
-
-tasks_dict = multiprocessing.Manager().dict()
-tasks_lock = multiprocessing.Lock()
 
 
 def generate_confs(tileset, ignore_warnings=True, renderd=False):
@@ -105,7 +100,7 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
     seed_conf = yaml.safe_load(seed_conf_json)
     mapproxy_conf = yaml.safe_load(mapproxy_conf_json)
 
-    print '---- mbtiles file to generate: {}'.format(get_tileset_filename(tileset))
+    print '---- mbtiles file to generate: {}'.format(get_tileset_filename(tileset.name))
 
     mapproxy_conf['sources']['tileset_source']['type'] = u_to_str(tileset.server_service_type)
 
@@ -127,7 +122,7 @@ def generate_confs(tileset, ignore_warnings=True, renderd=False):
 
     mapproxy_conf['layers'][0]['name'] = u_to_str(tileset.layer_name)
     mapproxy_conf['layers'][0]['title'] = u_to_str(tileset.layer_name)
-    mapproxy_conf['caches']['tileset_cache']['cache']['filename'] = get_tileset_filename(tileset, 'generating')
+    mapproxy_conf['caches']['tileset_cache']['cache']['filename'] = get_tileset_filename(tileset.name, 'generating')
 
     seed_conf['seeds']['tileset_seed']['levels']['from'] = tileset.layer_zoom_start
     seed_conf['seeds']['tileset_seed']['levels']['to'] = tileset.layer_zoom_stop
@@ -216,12 +211,16 @@ def get_tileset_dir():
     return conf.get('tileset_dir', './')
 
 
-def get_tileset_filename(tileset, extension='mbtiles'):
-    return '{}/{}.{}'.format(get_tileset_dir(), tileset.name, extension)
+def get_tileset_filename(tileset_name, extension='mbtiles'):
+    return '{}/{}.{}'.format(get_tileset_dir(), tileset_name, extension)
+
+
+def get_lock_filename(tileset_id):
+    return '{}/generate_tileset_{}.lck'.format(get_tileset_dir(), tileset_id)
 
 
 def update_tileset_stats(tileset):
-    tileset_filename = get_tileset_filename(tileset)
+    tileset_filename = get_tileset_filename(tileset.name)
     if os.path.isfile(tileset_filename):
         stat = os.stat(tileset_filename)
         tileset.created_at = datetime.fromtimestamp(stat.st_ctime)
@@ -239,34 +238,41 @@ def is_int_str(v):
 
 
 def get_status(tileset):
-    res = {'status': 'unknown'}
+    res = {
+        'current': {
+            'status': 'unknown'
+        },
+        'pending': {
+            'status': 'not in progress'
+        }
+    }
 
-    pid = tasks_dict.get(tileset.id, None)
-    # if tileset generation is not in progress
-    if not pid:
-        # if there is a .mbtiles file on disk, get the size and time last updated
-        tileset_filename = get_tileset_filename(tileset)
-        if os.path.isfile(tileset_filename):
-            res['status'] = 'ready'
-            stat = os.stat(tileset_filename)
-            if stat:
-                res['file_last_update'] = datetime.fromtimestamp(stat.st_ctime)
-                res['file_size'] = stat.st_size
-        else:
-            res['status'] = 'not generated'
-
-        # if there is a file .generating file on disk, it mean that last generation was stopped!
-        # get the size and time last updated
-        tileset_generating_filename = get_tileset_filename(tileset, 'generating')
-        if os.path.isfile(tileset_generating_filename):
-            stat = os.stat(tileset_generating_filename)
-            if stat:
-                res['stopped_file_last_update'] = datetime.fromtimestamp(stat.st_ctime)
-                res['stopped_file_file_size'] = stat.st_size
+    # generate status for already existing tileset
+    # if there is a .mbtiles file on disk, get the size and time last updated
+    tileset_filename = get_tileset_filename(tileset.name)
+    if os.path.isfile(tileset_filename):
+        res['current']['status'] = 'ready'
+        stat = os.stat(tileset_filename)
+        if stat:
+            res['current']['updated'] = datetime.fromtimestamp(stat.st_ctime)
+            res['current']['filesize'] = stat.st_size
     else:
+        res['current']['status'] = 'not generated'
+
+    # if there is a file .generating file on disk, it mean that last generation was stopped!
+    # get the size and time last updated
+    tileset_generating_filename = get_tileset_filename(tileset.name, 'generating')
+    if os.path.isfile(tileset_generating_filename):
+        stat = os.stat(tileset_generating_filename)
+        if stat:
+            res['pending']['updated'] = datetime.fromtimestamp(stat.st_ctime)
+            res['pending']['filesize'] = stat.st_size
+
+    pid = get_pid_from_lock_file(tileset.id)
+    if pid:
         # if tileset generation is in progress
-        res['status'] = 'in progress'
-        progress_log_filename = get_tileset_filename(tileset, 'progress_log')
+        res['pending']['status'] = 'in progress'
+        progress_log_filename = get_tileset_filename(tileset.name, 'progress_log')
         if os.path.isfile(progress_log_filename):
             with open(progress_log_filename, 'r') as f:
                 lines = f.read().replace('\r', '\n')
@@ -295,196 +301,100 @@ def get_status(tileset):
                 if latest_progress:
                     latest_step[2] = latest_progress[1]
 
-                res['percent_completed'] = latest_step[2][0:-1]
-                res['current_zoom_level'] = latest_step[1]
-                res['update_time'] = latest_step[0][1:-1]
-                res['estimated_completion_time'] = latest_step[len(latest_step) - 1]
+                res['pending']['progress'] = latest_step[2][0:-1]
+                res['pending']['current_zoom_level'] = latest_step[1]
+                iso_date = parser.parse(latest_step[len(latest_step) - 1]).isoformat()
+                res['pending']['estimated_completion_time'] = iso_date
         else:
-            res['status'] = 'in progress, but log not found'
+            res['pending']['status'] = 'in progress, but log not found'
     return res
     
 
-# problem with this approach is that celery threads are demonic and the seeder will try to spawn child processes
-# https://github.com/celery/celery/issues/1709. Once we can do this, use locking through a flag on model.
-def seed_celery(tileset):
+# when using uwsgi, several processes each with their own interpreter are often launched. This means that the typical
+# multiprocessing sync mechanisms such as Lock and Manager cannot be used. comments about issues to know about uwsgi:
+# http://uwsgi-docs.readthedocs.org/en/latest/ThingsToKnow.html note that enable-threads, close-on-exec, and
+# close-on-exec2 were not effective and even if they were, other deployments will need to match uwsgi setting which is
+# inconvenient especially since the problems caused can be misleading. The implementation here uses lock files to check
+# if a tileset is being generated and which process to kill when generate needs to be stopped by a user. Using celery
+# for multiprocessing poses another problem: since it generates its worker pool processes as proc.daemon = True,
+# each celery process cannot invoke the mapproxy.seed function which in turn wants to launch other processes. This
+# can be fixed in celery but it requires a patch. celery project reopened this 'bug' a few days ago as of 7-22-2015:
+# https://github.com/celery/celery/issues/1709 if it is fixed, we can switch to using celery without any immediate
+# gain for the current use case. Instead of using daemon processes, they should use another mechanism to track/kill
+# child processes so that each celery task can launch other processes.
+def seed_process_spawn(tileset):
     mapproxy_conf, seed_conf = generate_confs(tileset)
 
     # if there is an old _generating one around, back it up
     backup_millis = int(round(time.time() * 1000))
-    if os.path.isfile(get_tileset_filename(tileset, 'generating')):
-        os.rename(get_tileset_filename(tileset, 'generating'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
+    if os.path.isfile(get_tileset_filename(tileset.name, 'generating')):
+        os.rename(get_tileset_filename(tileset.name, 'generating'), '{}_{}'.format(get_tileset_filename(tileset.name, 'generating'), backup_millis))
 
     # if there is an old progress_log around, back it up
-    if os.path.isfile(get_tileset_filename(tileset, 'progress_log')):
-        os.rename(get_tileset_filename(tileset, 'progress_log'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
+    if os.path.isfile(get_tileset_filename(tileset.name, 'progress_log')):
+        os.rename(get_tileset_filename(tileset.name, 'progress_log'), '{}_{}'.format(get_tileset_filename(tileset.name, 'generating'), backup_millis))
 
     # generate the new mbtiles as name.generating file
-    progress_log_filename = get_tileset_filename(tileset, 'progress_log')
-    out = open(progress_log_filename, 'w+')
-    progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
-    tasks = seed_conf.seeds(['tileset_seed'])
-
-    # launch the task using another process
-    print '----[ start seeding. tileset {}'.format(tileset.id)
-    seeder.seed(tasks=tasks, progress_logger=progress_logger)
-
-    # now that we have generated the new mbtiles file, backup the last one, then rename
-    # the _generating one to the main name
-    if os.path.isfile(get_tileset_filename(tileset)):
-        millis = int(round(time.time() * 1000))
-        os.rename(get_tileset_filename(tileset), '{}_{}'.format(get_tileset_filename(tileset), millis))
-    os.rename(get_tileset_filename(tileset, 'generating'), get_tileset_filename(tileset))
-
-    # update the tileset object with teh actual size of the generated mbtile
-    update_tileset_stats(tileset)
-
-
-
-# since thread has access to the applications memory space, use a thread to gather and setup info needed for the
-# process that will do the seeding. Mapproxy will create child processes from the process we create here. The thread
-# will wait for the process to complete. When process completes, the thread will update information about the tileset
-from celery.task import task
-def seed_process_db_connection(tileset):
-    print '------ seed_process_db_connection 1, tileset: {}'.format(tileset)
-    mapproxy_conf, seed_conf = generate_confs(tileset)
-    print '------ seed_process_db_connection 2'
-
-    # if there is an old _generating one around, back it up
-    backup_millis = int(round(time.time() * 1000))
-    if os.path.isfile(get_tileset_filename(tileset, 'generating')):
-        os.rename(get_tileset_filename(tileset, 'generating'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
-    print '------ seed_process_db_connection 3'
-
-    # if there is an old progress_log around, back it up
-    if os.path.isfile(get_tileset_filename(tileset, 'progress_log')):
-        os.rename(get_tileset_filename(tileset, 'progress_log'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
-    print '------ seed_process_db_connection 4'
-
-    # generate the new mbtiles as name.generating file
-    progress_log_filename = get_tileset_filename(tileset, 'progress_log')
-    print '------ seed_process_db_connection 5'
-    out = open(progress_log_filename, 'w+')
-    print '------ seed_process_db_connection 6'
-    progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
-    print '------ seed_process_db_connection 7'
-    tasks = seed_conf.seeds(['tileset_seed'])
-    print '------ seed_process_db_connection 8'
-    # launch the task using another process
-    process = multiprocessing.Process(target=seed_process_db_connection__proc, args=(tileset.id, tasks, progress_logger, tasks_dict, tasks_lock))
-    print '------ seed_process_db_connection 9'
-    print '------ seed_process_db_connection 9.1'
-    pid = tasks_dict.get(tileset.id, None)
-    if pid == 'preparing_to_start':
-        process.start()
-        tasks_dict[tileset.id] = process.pid
-    print '------ seed_process_db_connection 10'
-
-
-def seed_process_db_connection__proc(tileset_id, tasks, progress_logger, tasks_dict, tasks_lock):
-    print '----[ start seeding. tileset {}'.format(tileset_id)
-    print '------ seed_process_db_connection__proc 1'
-    from models import Tileset
-    tileset = Tileset.objects.get(pk=tileset_id)
-
-    print '------ seed_process_db_connection__proc 2, tileset_id: {}'.format(tileset_id)
-    seeder.seed(tasks=tasks, progress_logger=progress_logger)
-
-    print '------ seed_process_db_connection__proc 3.5, sets.name: {}'.format(tileset.name)
-    print '------ seed_process_db_connection__proc 3.7, yaml.dump(tileset): {}'.format(yaml.dump(tileset))
-    print '------ seed_process_db_connection__proc 4'
-
-
-    # now that we have generated the new mbtiles file, backup the last one, then rename
-    # the _generating one to the main name
-    if os.path.isfile(get_tileset_filename(tileset)):
-        millis = int(round(time.time() * 1000))
-        os.rename(get_tileset_filename(tileset), '{}_{}'.format(get_tileset_filename(tileset), millis))
-    os.rename(get_tileset_filename(tileset, 'generating'), get_tileset_filename(tileset))
-    print '------ seed_process_db_connection__proc 5'
-    #update_tileset_stats(tileset)
-    """
-    causes exception if we want to update filesize
-  File "/usr/lib/python2.7/multiprocessing/process.py", line 258, in _bootstrap
-    self.run()
-  File "/usr/lib/python2.7/multiprocessing/process.py", line 114, in run
-    self._target(*self._args, **self._kwargs)
-  File "/syrus_dev/django-tilebundler/tilebundler/helpers.py", line 404, in seed_process_db_connection__proc
-    update_tileset_stats(tileset)
-  File "/syrus_dev/django-tilebundler/tilebundler/helpers.py", line 229, in update_tileset_stats
-    tileset.save()
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 545, in save
-    force_update=force_update, update_fields=update_fields)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 573, in save_base
-    updated = self._save_table(raw, cls, force_insert, force_update, using, update_fields)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 635, in _save_table
-    forced_update)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/base.py", line 679, in _do_update
-    return filtered._update(values) > 0
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/query.py", line 510, in _update
-    return query.get_compiler(self.db).execute_sql(None)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/sql/compiler.py", line 980, in execute_sql
-    cursor = super(SQLUpdateCompiler, self).execute_sql(result_type)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/models/sql/compiler.py", line 786, in execute_sql
-    cursor.execute(sql, params)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/backends/util.py", line 69, in execute
-    return super(CursorDebugWrapper, self).execute(sql, params)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/backends/util.py", line 53, in execute
-    return self.cursor.execute(sql, params)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/utils.py", line 99, in __exit__
-    six.reraise(dj_exc_type, dj_exc_value, traceback)
-  File "/var/lib/geonode/local/lib/python2.7/site-packages/django/db/backends/util.py", line 53, in execute
-    return self.cursor.execute(sql, params)
-OperationalError: SSL error: sslv3 alert bad record mac
-    """
-
-
-    print '------ seed_process_db_connection__proc 6'
-    tasks_dict[tileset.id] = None
-
-
-# since thread has access to the applications memory space, use a thread to gather and setup info needed for the
-# process that will do the seeding. Mapproxy will create child processes from the process we create here. The thread
-# will wait for the process to complete. When process completes, the thread will update information about the tileset
-def seed_thread(tileset):
-    mapproxy_conf, seed_conf = generate_confs(tileset)
-
-    # if there is an old _generating one around, back it up
-    backup_millis = int(round(time.time() * 1000))
-    if os.path.isfile(get_tileset_filename(tileset, 'generating')):
-        os.rename(get_tileset_filename(tileset, 'generating'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
-
-    # if there is an old progress_log around, back it up
-    if os.path.isfile(get_tileset_filename(tileset, 'progress_log')):
-        os.rename(get_tileset_filename(tileset, 'progress_log'), '{}_{}'.format(get_tileset_filename(tileset, 'generating'), backup_millis))
-
-    # generate the new mbtiles as name.generating file
-    progress_log_filename = get_tileset_filename(tileset, 'progress_log')
+    progress_log_filename = get_tileset_filename(tileset.name, 'progress_log')
     out = open(progress_log_filename, 'w+')
     progress_logger = util.ProgressLog(out=out, verbose=True, silent=False)
     tasks = seed_conf.seeds(['tileset_seed'])
     # launch the task using another process
-    process = multiprocessing.Process(target=seed_process, args=(tileset, tasks, progress_logger, tasks_dict, tasks_lock))
+    process = multiprocessing.Process(target=seed_process_target, args=(tileset.id, tileset.name, tasks, progress_logger))
     process.start()
-    tasks_dict[tileset.id] = process.pid
-    # thread will wait for process to complete (or terminate)
-    process.join()
-    # update the tileset object with teh actual size of the generated mbtile
-    update_tileset_stats(tileset)
+    return process.pid
 
 
-# use a process to do the actual seeding. This allows the app to terminate the seeding process which is not really
-# possible with a thread. When a seeding is stopped by the user, the thread that created this process can still
-# update the filesize of the tileset
-def seed_process(tileset, tasks, progress_logger, tasks_dict, tasks_lock):
-    print '----[ start seeding. tileset {}'.format(tileset.id)
+def seed_process_target(tileset_id, tileset_name, tasks, progress_logger):
+    print '----[ start seeding. tileset {}'.format(tileset_id)
     seeder.seed(tasks=tasks, progress_logger=progress_logger)
 
     # now that we have generated the new mbtiles file, backup the last one, then rename
     # the _generating one to the main name
-    if os.path.isfile(get_tileset_filename(tileset)):
+    if os.path.isfile(get_tileset_filename(tileset_name)):
         millis = int(round(time.time() * 1000))
-        os.rename(get_tileset_filename(tileset), '{}_{}'.format(get_tileset_filename(tileset), millis))
-    os.rename(get_tileset_filename(tileset, 'generating'), get_tileset_filename(tileset))
+        os.rename(get_tileset_filename(tileset_name), '{}_{}'.format(get_tileset_filename(tileset_name), millis))
+    os.rename(get_tileset_filename(tileset_name, 'generating'), get_tileset_filename(tileset_name))
+    remove_lock_file(tileset_id)
 
-    with tasks_lock:
-        tasks_dict[tileset.id] = None
+
+def get_lock_file(tileset_id):
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    lock_file = None
+
+    try:
+        file_handle = os.open(get_lock_filename(tileset_id), flags)
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            # Failed, file already exists.
+            pass
+        else:
+            # Something unexpected went wrong so re-raise the exception.
+            raise
+    else:
+        # No exception, so the file must have been created successfully.
+        lock_file = os.fdopen(file_handle, 'w')
+        lock_file.write('preparing_to_start\n')
+        lock_file.flush()
+    return lock_file
+
+
+def remove_lock_file(tileset_id):
+    try:
+        os.remove(get_lock_filename(tileset_id))
+    except OSError:
+        pass
+
+
+def get_pid_from_lock_file(tileset_id):
+    pid = None
+    name = get_lock_filename(tileset_id)
+    if os.path.isfile(name):
+        with open(name, 'r') as lock_file:
+            lines = lock_file.readlines()
+            if len(lines) > 0:
+                if lines[-1]:
+                    pid = lines[-1]
+                    if pid != 'preparing_to_start':
+                        pid = int(pid)
+    return pid

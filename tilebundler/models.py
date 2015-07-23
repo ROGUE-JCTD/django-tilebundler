@@ -1,9 +1,6 @@
 from django.db import models
 from django.conf import settings
-import celery
-import threading
 import psutil
-
 import helpers
 
 
@@ -28,13 +25,6 @@ class Tileset(models.Model):
     # region
     geom = models.TextField(blank=True)
 
-    # size of the tileset after /generate is invoked. /status will return the size of the file on disk and
-    # actual last modified date of file at teh time of request.
-    filesize = models.BigIntegerField(editable=False, default=0)
-
-    # 'not generated', 'in progress', 'ready'
-    # status = models.CharField(editable=False, default='not generated')
-
     def __unicode__(self):
         return self.name
 
@@ -42,43 +32,42 @@ class Tileset(models.Model):
     def stop(self):
         print '---- tileset.stop'
         res = {'status': 'not in progress'}
-        with helpers.tasks_lock:
-            pid = helpers.tasks_dict.get(self.id, None)
-            if pid:
-                print '---- tileset.stop, will stop, pid: {}'.format(pid)
-                res = {'status': 'stopped'}
-                helpers.tasks_dict[self.id] = None
-                if pid != 'preparing_to_start':
-                    process = psutil.Process(pid=pid)
-                    if process:
-                        children = process.children()
-                        for c in children:
-                            c.terminate()
-                        process.terminate()
-                else:
-                    res = {'status': 'debug, prevernted started!'}
+        pid = helpers.get_pid_from_lock_file(self.id)
+        if pid:
+            print '---- tileset.stop, will stop, pid: {}'.format(pid)
+            res = {'status': 'stopped'}
+            if pid != 'preparing_to_start':
+                process = psutil.Process(pid=pid)
+                if process:
+                    children = process.children()
+                    for c in children:
+                        c.terminate()
+                    process.terminate()
+                    helpers.remove_lock_file(self.id)
             else:
-                print '---- tileset.stop, will NOT stop. not running'
+                # TODO: prevent it from starting!
+                res = {'status': 'debug, prevernted started!'}
+        else:
+            print '---- tileset.stop, will NOT stop. not running'
 
         return res
 
     # use the tileset object as input to start creation of the mbtiles
     def generate(self):
         print '---- tileset.generate'
-        with helpers.tasks_lock:
-            pid = helpers.tasks_dict.get(self.id, None)
+        lock_file = helpers.get_lock_file(self.id)
+        if lock_file:
+            print '---- tileset.generate, will generate'
+            pid = helpers.seed_process_spawn(self)
+            lock_file.write("{}\n".format(pid))
+            lock_file.flush()
+            lock_file.close()
+            res = {'status': 'started'}
+        else:
+            print '---- tileset.generate, will NOT generate. already running, pid: {}'.format(helpers.get_pid_from_lock_file(self.id))
+            res = {'status': 'already started'}
 
-            if not pid:
-                print '---- tileset.generate, will generate'
-                # set the pid to 'preparing_to_start' when we start the thread. When process starts, it will update it
-                # to be the actual pid
-                helpers.tasks_dict[self.id] = 'preparing_to_start'
-                helpers.seed_process_db_connection(self)
-                res = {'status': 'started'}
-            else:
-                print '---- tileset.generate, will NOT generate. already running, pid: {}'.format(pid)
-                res = {'status': 'already started'}
-            return res
+        return res
 
     # TODO: the the log for the mbtiles being generated should be seperate from the log for the last successfully downloaded
     #       file.
