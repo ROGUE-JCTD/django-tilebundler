@@ -4,8 +4,14 @@ A service that caches all the tiles in specified "bounds" for provided layer(s) 
 
 It is an open-source application that has been developed under the [ROGUE][4] project and is part of the [GeoSHAPE][3] eco-system. You can incorporate TileBundler in other applications and can create a 
 
-----------
+Notes
+=============
+- The `geom` of a tileset can specified as:
+    - bounding box: `[-77.47, 38.72, -76.72, 39.08]`
+    - geojson: `{...}`
+    - WKT polygon or multipolygon: `POLYGON((-4.5703125 84.0228901101526,165.5859375 84.0228901101526,165.5859375 6.031310707125822,-4.5703125 6.031310707125822,-4.5703125 84.0228901101526))`
 
+- you can create tilesets from layers on your local geoserver. Be sure to prefix `<workspace>:` before your layer name such as: `geonode:ne_50m_admin_0_countries`. If local server has ssl enabled but doesn't have a valid certificate, you can provide the http url instead of https. 
 
 API Quick Guide
 =============
@@ -140,17 +146,33 @@ Stop the generation of the tileset with id 1
 
 `/api/tileset/1/status`
 ---------------------------------
-will retrive the status of tileset with id 1. the return `file_size` and  `file_last_update` will be read from the actual tileset file on disk
+will retrive the status of tileset with id 1 and it will indicate the status of both the `current` tilset as well as a `pending` status for when the tileset is being generated. Note that when a tileset is generated, it is saved as a .generating file as opposed to .mbtiles and it only replaces the mbtiles file when generate completes. The previous mbtiles is backed up for good measure since a mistakenly trigger generate would otherwise discard a tileset that might have taken a while to generate. Note that if an mbtiles already exists and the tileset is generated again, during the generate process, the previous tileset will still be available to for download. Similarly, if the current generate is stopped, the main tileset will still be valid and usable. 
 
 **expected statuses** 
-- `not generated`: could not find an mbtiles corresponding to this tileset object.
-- `in progress`: generation of the mbtiles is currently in progress
-- `ready`: an mbtiles file is available for download. Note when a tileset is generated, it does not replace any existing tileset until it has been fully generated. If the tileset has been generated and then the following `generate` is stopped, the last completed tileset will be used. As an indication that the last generate was `stopped`, the response will contain `stopped_file_last_update` and `stopped_file_file_size` in addition to the `file_last_update` and `file_size`
+- `not generated`: an mbtiles corresponding to this tileset object does not exist.
+- `ready`: an mbtiles file is available for download. Note when a tileset is generated, it does not replace any existing tileset until it has been fully generated. If the tileset has been generated and then the following `generate` is stopped, the last completed tileset will be used. 
 - `stopped`: generation of the mbtiles was stopped before it was completed. Note that normally unless the tileset generation is completed, the mbtile file will not replace a previous tileset.  
+- `in progress`: generation of the mbtiles is currently in progress
 - `in progress, but log not found`: the mbtiles was found but a corresponding log file was not found.   
 
 **sample response**
-`{"file_last_update": "2015-07-09T21:44:29", "file_size": 1544192, "status": "ready"}`
+```
+{
+  "current": {
+    "filesize": 1155072, 
+    "status": "ready", 
+    "updated": "2015-07-23T04:05:07"
+  }, 
+  "pending": {
+    "current_zoom_level": "4", 
+    "estimated_completion_time": "2015-07-23T04:38:40", 
+    "filesize": 237568, 
+    "progress": "37.50", 
+    "status": "in progress", 
+    "updated": "2015-07-23T04:35:41"
+  }
+}
+```
 
 `/api/tileset/1/download`
 ------------------------------------
