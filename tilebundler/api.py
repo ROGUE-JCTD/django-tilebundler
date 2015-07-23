@@ -18,7 +18,7 @@ class UserResource(ModelResource):
 
 
 class TilesetResource(ModelResource):
-    created_by = fields.ToOneField(UserResource, 'created_by',  full=True)
+    created_by = fields.ToOneField(UserResource, 'created_by',  full=True, blank=True, null=True)
 
     class Meta:
         queryset = Tileset.objects.all()
