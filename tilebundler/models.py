@@ -1,6 +1,5 @@
 from django.db import models
 from django.conf import settings
-import psutil
 import helpers
 
 
@@ -25,6 +24,9 @@ class Tileset(models.Model):
     # region
     geom = models.TextField(blank=True)
 
+    # NOTE: filesize and updated fields are added dynamically based on the actual file on disk
+    #       as opposed to the database object. See TilesetResource.alter_detail_data_to_serialize
+
     def __unicode__(self):
         return self.name
 
@@ -32,23 +34,23 @@ class Tileset(models.Model):
     def stop(self):
         print '---- tileset.stop'
         res = {'status': 'not in progress'}
-        pid = helpers.get_pid_from_lock_file(self.id)
-        if pid:
-            print '---- tileset.stop, will stop, pid: {}'.format(pid)
+        pid_str = helpers.get_pid_from_lock_file(self.id)
+        process = helpers.get_process_from_pid(pid_str)
+        if process:
+            print '---- tileset.stop, will stop, pid: {}'.format(pid_str)
             res = {'status': 'stopped'}
-            if pid != 'preparing_to_start':
-                process = psutil.Process(pid=pid)
-                if process:
-                    children = process.children()
-                    for c in children:
-                        c.terminate()
-                    process.terminate()
-                    helpers.remove_lock_file(self.id)
-            else:
-                # TODO: prevent it from starting!
-                res = {'status': 'debug, prevernted started!'}
+            children = process.children()
+            for c in children:
+                c.terminate()
+            process.terminate()
         else:
-            print '---- tileset.stop, will NOT stop. not running'
+            if pid_str == 'preparing_to_start':
+                res = {'status': 'debug, prevent start!'}
+                # TODO: prevent it from starting!
+                print '--- process not running but may be started shortly'
+            elif helpers.is_int_str(pid_str):
+                helpers.remove_lock_file(self.id)
+                print '---- tileset.stop, process not running but cleaned lck file'
 
         return res
 

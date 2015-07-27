@@ -8,6 +8,7 @@ from tastypie import fields
 from django.contrib.auth import get_user_model
 import helpers
 import os
+from datetime import datetime
 
 
 class UserResource(ModelResource):
@@ -44,6 +45,17 @@ class TilesetResource(ModelResource):
                 (self._meta.resource_name, trailing_slash()),
                 self.wrap_view('stop'), name="api_tileset_stop"),
         ]
+
+    # filesize and updated fields are added dynamically based on the actual file on disk as opposed to the database object
+    def alter_detail_data_to_serialize(self, request, bundle):
+        helpers.add_tileset_file_attribs(bundle.data, bundle.obj)
+        return bundle
+
+    # add what alter_detail_data_to_serialize does when all the tilesets are requested as well
+    def alter_list_data_to_serialize(self, request, to_be_serialized):
+        for bundle in to_be_serialized['objects']:
+            self.alter_detail_data_to_serialize(request, bundle)
+        return to_be_serialized
 
     def generate(self, request, **kwargs):
         """ proxy for the tileset.generate method """

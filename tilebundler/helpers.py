@@ -15,6 +15,7 @@ import errno
 import time
 from dateutil import parser
 import multiprocessing
+import psutil
 
 
 def generate_confs(tileset, ignore_warnings=True, renderd=False):
@@ -237,6 +238,15 @@ def is_int_str(v):
     return v == '0' or (v if v.find('..') > -1 else v.lstrip('-+').rstrip('0').rstrip('.')).isdigit()
 
 
+def add_tileset_file_attribs(target_object, tileset, extension='mbtiles'):
+    tileset_filename = get_tileset_filename(tileset.name, extension)
+    if os.path.isfile(tileset_filename):
+        stat = os.stat(tileset_filename)
+        if stat:
+            target_object['file_size'] = stat.st_size
+            target_object['file_updated'] = datetime.fromtimestamp(stat.st_ctime)
+
+
 def get_status(tileset):
     res = {
         'current': {
@@ -252,21 +262,13 @@ def get_status(tileset):
     tileset_filename = get_tileset_filename(tileset.name)
     if os.path.isfile(tileset_filename):
         res['current']['status'] = 'ready'
-        stat = os.stat(tileset_filename)
-        if stat:
-            res['current']['updated'] = datetime.fromtimestamp(stat.st_ctime)
-            res['current']['filesize'] = stat.st_size
+        # get the size and time last updated for the tileset
+        add_tileset_file_attribs(res['current'], tileset)
     else:
         res['current']['status'] = 'not generated'
 
-    # if there is a file .generating file on disk, it mean that last generation was stopped!
-    # get the size and time last updated
-    tileset_generating_filename = get_tileset_filename(tileset.name, 'generating')
-    if os.path.isfile(tileset_generating_filename):
-        stat = os.stat(tileset_generating_filename)
-        if stat:
-            res['pending']['updated'] = datetime.fromtimestamp(stat.st_ctime)
-            res['pending']['filesize'] = stat.st_size
+    # get the size and time last updated for the 'pending' tileset
+    add_tileset_file_attribs(res['pending'], tileset, 'generating')
 
     pid = get_pid_from_lock_file(tileset.id)
     if pid:
@@ -303,8 +305,13 @@ def get_status(tileset):
 
                 res['pending']['progress'] = latest_step[2][0:-1]
                 res['pending']['current_zoom_level'] = latest_step[1]
-                iso_date = parser.parse(latest_step[len(latest_step) - 1]).isoformat()
-                res['pending']['estimated_completion_time'] = iso_date
+
+                # get the eta but pass if date is cannot be parsed.
+                try:
+                    iso_date = parser.parse(latest_step[len(latest_step) - 1]).isoformat()
+                    res['pending']['estimated_completion_time'] = iso_date
+                except ValueError:
+                    pass
         else:
             res['pending']['status'] = 'in progress, but log not found'
     return res
@@ -341,8 +348,13 @@ def seed_process_spawn(tileset):
     tasks = seed_conf.seeds(['tileset_seed'])
     # launch the task using another process
     process = multiprocessing.Process(target=seed_process_target, args=(tileset.id, tileset.name, tasks, progress_logger))
-    process.start()
-    return process.pid
+    pid = None
+    if 'preparing_to_start' == get_pid_from_lock_file(tileset.id):
+        process.start()
+        pid = process.pid
+    else:
+        print '---- Not starting process. cancel was requested. '
+    return pid
 
 
 def seed_process_target(tileset_id, tileset_name, tasks, progress_logger):
@@ -394,7 +406,15 @@ def get_pid_from_lock_file(tileset_id):
             lines = lock_file.readlines()
             if len(lines) > 0:
                 if lines[-1]:
-                    pid = lines[-1]
-                    if pid != 'preparing_to_start':
-                        pid = int(pid)
+                    pid = lines[-1].rstrip()
     return pid
+
+
+def get_process_from_pid(pid):
+    process = None
+    if is_int_str(pid):
+        try:
+            process = psutil.Process(pid=int(pid))
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            pass
+    return process
