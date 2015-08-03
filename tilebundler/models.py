@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from mapproxy.seed.config import SeedConfigurationError, ConfigurationError
 import helpers
 
 
@@ -49,9 +50,9 @@ class Tileset(models.Model):
                 # TODO: prevent it from starting!
                 print '--- process not running but may be started shortly'
             elif helpers.is_int_str(pid_str):
-                helpers.remove_lock_file(self.id)
                 print '---- tileset.stop, process not running but cleaned lck file'
 
+        helpers.remove_lock_file(self.id)
         return res
 
     # use the tileset object as input to start creation of the mbtiles
@@ -60,11 +61,18 @@ class Tileset(models.Model):
         lock_file = helpers.get_lock_file(self.id)
         if lock_file:
             print '---- tileset.generate, will generate'
-            pid = helpers.seed_process_spawn(self)
-            lock_file.write("{}\n".format(pid))
-            lock_file.flush()
-            lock_file.close()
-            res = {'status': 'started'}
+            try:
+                pid = helpers.seed_process_spawn(self)
+                lock_file.write("{}\n".format(pid))
+                res = {'status': 'started'}
+            except (SeedConfigurationError, ConfigurationError) as e:
+                print '--- Something went wrong when generating.. removing lock file'
+                helpers.remove_lock_file(self.id)
+                res = {'status': 'unable to start',
+                       'error': e.message}
+            finally:
+                lock_file.flush()
+                lock_file.close()
         else:
             print '---- tileset.generate, will NOT generate. already running, pid: {}'.format(helpers.get_pid_from_lock_file(self.id))
             res = {'status': 'already started'}
