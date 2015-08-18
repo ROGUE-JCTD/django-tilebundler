@@ -13,6 +13,28 @@ Notes
 
 - you can create tilesets from layers on your local geoserver. Be sure to prefix `<workspace>:` before your layer name such as: `geonode:ne_50m_admin_0_countries`. If local server has ssl enabled but doesn't have a valid certificate, you can provide the http url instead of https. 
 
+- If your tileset's service type is "tile", it can either be an XYZ layer, or a TMS layer. These types of layers handle bounds differently, and needs to be addressed. This could mean that caching the bounds on this layer will need a different origin, specifically one that mirrors the equator. This is done by inverting the y-values of the geometry. An example will be shown below. Do this before generating the tileset. If your tileset is on the wrong side of the world, and/or all of the tiles end upside-down, re-generate the tileset after inversion. More documentation about this concept can be found [here][8].
+    - If you have a WMS service type, this does not apply.
+    
+Example:
+--------
+    Ordering of bounds is:
+    [Left, Bottom, Right, Top]
+
+    Normal OpenStreetMap bounds of Falls Church, VA:
+    [-77.21917, 38.85804, -77.21295, 38.86337]
+
+    Bottom = -Top
+    38.85804 = -38.86337
+
+    Top = -Bottom
+    38.86337 = -38.85804
+
+    Inverted OpenStreetMap bounds of Falls Church, VA:
+    [-77.21917, -38.86337, -77.21295, -38.85804]
+
+&nbsp;&nbsp;&nbsp;
+
 API Quick Guide
 =============
 To create tileset objects, use the django admin API. We would like to embed the creation of the tileset object in [MapLoom][6] where the user can add all layers of interest to the map, draw the geometry, and specify zoom range for the tile set. They would also be able to to trigger generation, view progress, and manage tilesets on the server from within [MapLoom][6]. 
@@ -181,6 +203,15 @@ Download the mbtiles file generated from tileset with id 1
 **expected statuses**
 - `not generated`: could not find an mbtiles corresponding to this tileset object.
 
+------
+&nbsp;&nbsp;&nbsp;
+
+Known Issues
+=============
+ - An invalid URL will lock the generation of the tileset. Progress will not go above 0%, and the progress log will reflect this.
+    - `NOTE: If on the VM, the generated .lck will have a PID, and the rogue_geonode log file will print that there is a ServerError.`
+ - An invalid username / password will lock the generation of the tileset, and yield similar results to the invalid URL.
+ - Invalid geometry will be generated, but will not be able to be shown on a map.
 
   [1]: http://djangoproject.com "Django"
   [2]: http://mapproxy.org "MapProxy"
@@ -188,4 +219,5 @@ Download the mbtiles file generated from tileset with id 1
   [4]: http://github.com/rogue-jctd/ "ROGUE"
   [5]: http://github.com/ROGUE-JCTD/Arbiter-Android "Arbiter"
   [6]: http://github.com/mapbox/mbtiles-spec "mbtiles"
-  [6]: http://github.com/ROGUE-JCTD/MapLoom  "MapLoom"
+  [7]: http://github.com/ROGUE-JCTD/MapLoom  "MapLoom"
+  [8]: https://alastaira.wordpress.com/2011/07/06/converting-tms-tile-coordinates-to-googlebingosm-tile-coordinates/
