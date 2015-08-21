@@ -14,9 +14,14 @@ Notes
 - you can create tilesets from layers on your local geoserver. Be sure to prefix `<workspace>:` before your layer name such as: `geonode:ne_50m_admin_0_countries`. If local server has ssl enabled but doesn't have a valid certificate, you can provide the http url instead of https. 
 
 - If your tileset's service type is "tile", it can either be an XYZ layer, or a TMS layer. These types of layers handle bounds differently, and needs to be addressed. This could mean that caching the bounds on this layer will need a different origin, specifically one that mirrors the equator. This is done by inverting the y-values of the geometry. An example will be shown below. Do this before generating the tileset. If your tileset is on the wrong side of the world, and/or all of the tiles end upside-down, re-generate the tileset after inversion. More documentation about this concept can be found [here][8].
-    - If you have a WMS service type, this does not apply.
-    
-Example:
+
+- If you plan on caching from OpenStreetMap or HIU TMS servers:
+    - OpenStreetMap - follow the information below. When getting your bounds from an outside source (or OpenStreetMap.org's export feature) make sure that the bounds mirror the equator.
+    - HIU TMS - Make sure to use the flipped URL (http://hiu-maps.net/hot/1.0.0/tegu-15feb2010-flipped/%(z)s/%(x)s/%(y)s.png), and also have bounds that mirror the equator.
+
+- Making MBTiles from WMS layers on Geoserver is currently not supported.
+
+Example - Mirroring the Equator:
 --------
     Ordering of bounds is:
     [Left, Bottom, Right, Top]
