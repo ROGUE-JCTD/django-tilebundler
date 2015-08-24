@@ -44,7 +44,7 @@ Example - Mirroring the Equator:
 
 Example Output - OSM and TMS:
 --------
-*OpenStreetMap:*
+*OpenStreetMap: Falls Church, VA*
 ```
 {
     "created_at": "2015-08-19T13:58:54.002882",
@@ -57,7 +57,7 @@ Example Output - OSM and TMS:
         },
     "file_size": 59392,
     "file_updated": "2015-08-19T14:26:08.959459",
-    "geom": "[-77.21917, 38.85804, -77.21295, 38.86337]",
+    "geom": "[-77.21917, -38.86337, -77.21295, -38.85804]",
     "id": 15,
     "layer_name": "osm",
     "layer_zoom_start": 0,
@@ -70,7 +70,7 @@ Example Output - OSM and TMS:
 }
 ```
 
-*OpenStreetMap Local GeoServer VM:*
+*OpenStreetMap Local GeoServer VM: Falls Church, VA*
 ```
 {
     "created_at": "2015-08-04T14:14:52.977549",
