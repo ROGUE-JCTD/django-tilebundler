@@ -55,7 +55,7 @@ Example Output - OSM and TMS:
             "resource_uri": "",
             "username": "admin"
         },
-    "file_size": 59392,
+    "file_size": 820224,
     "file_updated": "2015-08-19T14:26:08.959459",
     "geom": "[-77.21917, -38.86337, -77.21295, -38.85804]",
     "id": 15,
@@ -90,7 +90,8 @@ Example Output - OSM and TMS:
     "layer_zoom_stop": 18,
     "name": "OSMLocal",
     "resource_uri": "/api/tileset/4/",
-    "server_service_type": "tile",    "server_url": "http://(Location_Of_Your_OSM_VM)/osm_tiles/%(z)s/%(x)s/%(y)s.png",
+    "server_service_type": "tile",
+    "server_url": "http://(Location_Of_Your_OSM_VM)/osm_tiles/%(z)s/%(x)s/%(y)s.png",
     "server_username": ""
 }
 ```
