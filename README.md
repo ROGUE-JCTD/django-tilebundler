@@ -17,9 +17,11 @@ Notes
 
 - If you plan on caching from OpenStreetMap or HIU TMS servers:
     - OpenStreetMap - follow the information below. When getting your bounds from an outside source (or OpenStreetMap.org's export feature) make sure that the bounds mirror the equator.
-    - HIU TMS - Make sure to use the flipped URL (http://hiu-maps.net/hot/1.0.0/tegu-15feb2010-flipped/%(z)s/%(x)s/%(y)s.png), and also have bounds that mirror the equator.
+    - HIU TMS - Make sure to use the flipped URL (For example: Honduras, Tegucigalpa = http://hiu-maps.net/hot/1.0.0/tegu-15feb2010-flipped/%(z)s/%(x)s/%(y)s.png), and also have bounds that mirror the equator.
+    - An example on how to mirror the equator will be [here][9].
+    - Example output for OSM + TMS caching will be [here][10].
 
-- Making MBTiles from WMS layers on Geoserver is currently not supported.
+- Making MBTiles from WMS layers on GeoServer is currently not supported.
 
 Example - Mirroring the Equator:
 --------
@@ -35,8 +37,89 @@ Example - Mirroring the Equator:
     Top = -Bottom
     38.86337 = -38.85804
 
-    Inverted OpenStreetMap bounds of Falls Church, VA:
+    Mirrored OpenStreetMap bounds of Falls Church, VA:
     [-77.21917, -38.86337, -77.21295, -38.85804]
+
+&nbsp;&nbsp;&nbsp;
+
+Example Output - OSM and TMS:
+--------
+*OpenStreetMap:*
+```
+{
+    "created_at": "2015-08-19T13:58:54.002882",
+    "created_by":
+        {
+            "first_name": "",
+            "last_name": "",
+            "resource_uri": "",
+            "username": "admin"
+        },
+    "file_size": 59392,
+    "file_updated": "2015-08-19T14:26:08.959459",
+    "geom": "[-77.21917, 38.85804, -77.21295, 38.86337]",
+    "id": 15,
+    "layer_name": "osm",
+    "layer_zoom_start": 0,
+    "layer_zoom_stop": 18,
+    "name": "OpenStreetMapdotOrg",
+    "resource_uri": "/api/tileset/15/",
+    "server_service_type": "tile",
+    "server_url": "http://b.tile.openstreetmap.org/%(z)s/%(x)s/%(y)s.png",
+    "server_username": ""
+}
+```
+
+*OpenStreetMap Local GeoServer VM:*
+```
+{
+    "created_at": "2015-08-04T14:14:52.977549",
+    "created_by":
+        {
+            "first_name": "",
+            "last_name": "",
+            "resource_uri": "",
+            "username": "admin"
+        },
+    "file_size": 820224,
+    "file_updated": "2015-08-19T10:41:33.265202",
+    "geom": "[-77.21917, -38.86337, -77.21295, -38.85804]\r\n",
+    "id": 4,
+    "layer_name": "osm",
+    "layer_zoom_start": 0,
+    "layer_zoom_stop": 18,
+    "name": "OSMLocal",
+    "resource_uri": "/api/tileset/4/",
+    "server_service_type": "tile",    "server_url": "http://(Location_Of_Your_OSM_VM)/osm_tiles/%(z)s/%(x)s/%(y)s.png",
+    "server_username": ""
+}
+```
+
+*TMS - Honduras, Tegucigalpa:*
+```
+{
+    "created_at": "2015-08-04T15:19:49.048624",
+    "created_by":
+        {
+            "first_name": "",
+            "last_name": "",
+            "resource_uri": "",
+            "username": "admin"
+        },
+    "file_size": 118784,
+    "file_updated": "2015-08-19T10:41:33.265202",
+    "geom": "[-87.20499, 14.09714, -87.20273, 14.09966]",
+    "id": 7,
+    "layer_name": "tegu_layer",
+    "layer_zoom_start": 0,
+    "layer_zoom_stop": 18,
+    "name": "HiuTegu_TMS",
+    "resource_uri": "/api/tileset/7/",
+    "server_service_type": "tile",
+    "server_url": "http://hiu-maps.net/hot/1.0.0/tegu-15feb2010-flipped/%(z)s/%(x)s/%(y)s.png",
+    "server_username": ""
+}
+```
 
 &nbsp;&nbsp;&nbsp;
 
@@ -226,3 +309,5 @@ Known Issues
   [6]: http://github.com/mapbox/mbtiles-spec "mbtiles"
   [7]: http://github.com/ROGUE-JCTD/MapLoom  "MapLoom"
   [8]: https://alastaira.wordpress.com/2011/07/06/converting-tms-tile-coordinates-to-googlebingosm-tile-coordinates/
+  [9]: https://github.com/ROGUE-JCTD/django-tilebundler#example---mirroring-the-equator
+  [10]: https://github.com/ROGUE-JCTD/django-tilebundler#example-output---osm-and-tms
