@@ -5,7 +5,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='django-tilebundler',
-    version='0.1-alpha6',
+    version='0.1-beta2',
     author='Syrus Mesdaghi',
     author_email='geoshape.org@gmail.com',
     url='https://github.com/ROGUE-JCTD/django-tilebundler',
@@ -27,11 +27,11 @@ setup(
         'Programming Language :: Python :: 2.7'
     ],
     install_requires=[
-        'Django==1.6.10',
+        'Django>=1.6.10',
         'MapProxy==1.8.0',
-        'PyYAML==3.10',
-        'django-tastypie==0.12.1',
-        'Shapely==1.5.9',
+        'PyYAML>=3.10',
+        'django-tastypie>=0.12.1',
+        'Shapely>=1.5.9',
         'psutil==3.0.1'
     ]
 )
