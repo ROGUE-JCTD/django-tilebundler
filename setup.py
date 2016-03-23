@@ -5,9 +5,9 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 setup(
     name='django-tilebundler',
-    version='0.1-beta2',
+    version='0.1-beta3',
     author='Syrus Mesdaghi',
-    author_email='geoshape.org@gmail.com',
+    author_email='syrusm@prominentedge.com',
     url='https://github.com/ROGUE-JCTD/django-tilebundler',
     download_url='https://github.com/ROGUE-JCTD/django-tilebundler',
     description='Service that creates tilesets from layer sources and serves them',
@@ -32,6 +32,6 @@ setup(
         'PyYAML>=3.10',
         'django-tastypie>=0.12.1',
         'Shapely>=1.5.9',
-        'psutil==3.0.1'
+        'psutil>=3.0.1'
     ]
 )
