@@ -28,7 +28,7 @@ setup(
     ],
     install_requires=[
         'Django>=1.6.10',
-        'MapProxy==1.8.0',
+        'MapProxy==1.10.4',
         'PyYAML>=3.10',
         'django-tastypie>=0.12.1',
         'Shapely>=1.5.9',
